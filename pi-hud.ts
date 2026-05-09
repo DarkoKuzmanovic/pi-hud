@@ -4,9 +4,9 @@ import { basename } from "node:path";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { execSync } from "node:child_process";
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { VERSION } from "@mariozechner/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { VERSION } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 const AUTH_PATH = join(homedir(), ".pi", "agent", "auth.json");
 const FIREFOX_PROFILES_DIR = join(homedir(), ".mozilla", "firefox");
