@@ -11,6 +11,10 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 const AUTH_PATH = join(homedir(), ".pi", "agent", "auth.json");
 const FIREFOX_PROFILES_DIR = join(homedir(), ".mozilla", "firefox");
 const QUOTA_REFRESH_MS = 60_000;
+// Wafer bills by requests per 5hr window (1,000 on Starter). Scrape every 60s
+// would burn ~300 requests/5hr — 30% of budget on quota checks alone.
+// 5-minute intervals = ~60 requests/5hr = 6% of budget.
+const WAFER_QUOTA_REFRESH_MS = 300_000;
 const GIT_REFRESH_MS = 5_000;
 const HIDDEN_STATUSES = new Set(["claude-oauth-ready", "claude-oauth-issue"]);
 const MAX_RESPONSE_BYTES = 64 * 1024;
@@ -1228,7 +1232,9 @@ export default function piHud(pi: ExtensionAPI) {
 			const interval = setInterval(() => {
 				const provider = ctx.model?.provider;
 				const activeUsage = getActiveUsage(ctx);
-				if (Date.now() - (activeUsage.updatedAt ?? 0) > QUOTA_REFRESH_MS) {
+				const isWaferActive = isWaferProvider(ctx.model?.provider);
+				const quotaRefresh = isWaferActive ? WAFER_QUOTA_REFRESH_MS : QUOTA_REFRESH_MS;
+				if (Date.now() - (activeUsage.updatedAt ?? 0) > quotaRefresh) {
 					void refreshActiveProvider(ctx).then(() => tui.requestRender());
 				}
 				tui.requestRender();
@@ -1364,6 +1370,7 @@ export default function piHud(pi: ExtensionAPI) {
 		if (ctx.hasUI) {
 			ctx.ui.setHeader((_tui, theme) => ({
 				render(width: number): string[] {
+				try {
 					const artLines = renderGradientArt();
 					const artW = PI_ART_W;
 					const gap = 3;
