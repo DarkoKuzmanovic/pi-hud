@@ -945,7 +945,10 @@ function padBetween(left: string, right: string, width: number): string {
 	const leftWidth = width - rightWidth - 1;
 	const fittedLeft = visibleWidth(left) > leftWidth ? truncateToWidth(left, leftWidth, "…") : left;
 	const space = Math.max(1, width - visibleWidth(fittedLeft) - rightWidth);
-	return fittedLeft + " ".repeat(space) + right;
+	const raw = fittedLeft + " ".repeat(space) + right;
+	// Safety: ANSI sequence edge cases can cause visibleWidth to undercount.
+	// If the raw line still exceeds width, force-truncate.
+	return visibleWidth(raw) > width ? truncateToWidth(raw, width, "…") : raw;
 }
 
 function compactModelName(id: string): string {
