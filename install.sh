@@ -8,8 +8,13 @@ EXT_DIR="$HOME/.pi/agent/extensions"
 
 mkdir -p "$EXT_DIR"
 
-ln -sfn "$SCRIPT_DIR/pi-hud.ts" "$EXT_DIR/pi-hud.ts"
-echo "✓ Symlinked pi-hud.ts → $EXT_DIR/pi-hud.ts"
+# Clean up any stale single-file or backup symlinks from previous installs.
+rm -f "$EXT_DIR/pi-hud.ts" "$EXT_DIR/pi-hud.ts.bak"
+
+# pi-coding-agent's loader picks up extensions/<name>/index.ts automatically,
+# so symlink the whole project directory.
+ln -sfn "$SCRIPT_DIR" "$EXT_DIR/pi-hud"
+echo "✓ Symlinked pi-hud → $EXT_DIR/pi-hud"
 
 echo ""
 echo "Installed pi-hud."
