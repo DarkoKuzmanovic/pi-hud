@@ -1241,6 +1241,7 @@ export default function piHud(pi: ExtensionAPI) {
 				},
 				invalidate() {},
 				render(width: number): string[] {
+					try {
 					const cwdName = basename(ctx.cwd) || ctx.cwd;
 					const cwdPath = compactPath(ctx.cwd);
 					const branch = footerData.getGitBranch();
@@ -1346,7 +1347,12 @@ export default function piHud(pi: ExtensionAPI) {
 
 					const lines = [padBetween(left1, right1, width), padBetween(left2, right2, width)];
 					if (line3) lines.push(line3);
-					return lines;
+					// Safety: ensure no line exceeds terminal width
+					return lines.map((line) => truncateToWidth(line, width, "…"));
+					} catch {
+					// Render error — return minimal safe footer instead of crashing Pi
+					return [theme.fg("muted", `pi-hud error — use /hud off to disable`)];
+					}
 				},
 			};
 		});
@@ -1403,7 +1409,12 @@ export default function piHud(pi: ExtensionAPI) {
 						lines.push(`${a}${sp}${truncateToWidth(r, rw, "\u2026")}`);
 					}
 					lines.push(theme.fg("dim", "\u2500".repeat(Math.min(width, 80))));
-					return lines;
+					// Safety: ensure no line exceeds terminal width
+					return lines.map((line) => truncateToWidth(line, width, "\u2026"));
+					} catch {
+					// Render error — return minimal safe header instead of crashing Pi
+					return [theme.fg("muted", "pi-hud")];
+					}
 				},
 				invalidate() {},
 			}));
