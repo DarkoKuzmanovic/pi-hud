@@ -22,9 +22,26 @@ const GRADIENT_PALETTES: Record<string, [number, number, number][]> = {
 	inferno:  [[250, 204, 21], [239, 68, 68], [192, 38, 211]],
 };
 
-const PALETTE_NAMES = Object.keys(GRADIENT_PALETTES);
-const ACTIVE_PALETTE: [number, number, number][] =
+export const PALETTE_NAMES = Object.keys(GRADIENT_PALETTES);
+let activePaletteName = "random";
+let ACTIVE_PALETTE: [number, number, number][] =
 	GRADIENT_PALETTES[PALETTE_NAMES[Math.floor(Math.random() * PALETTE_NAMES.length)]];
+
+export function getActivePalette(): [number, number, number][] {
+	return ACTIVE_PALETTE;
+}
+export function getActivePaletteName(): string {
+	return activePaletteName;
+}
+export function setActivePalette(name: string): void {
+	if (name === "random") {
+		activePaletteName = "random";
+		ACTIVE_PALETTE = GRADIENT_PALETTES[PALETTE_NAMES[Math.floor(Math.random() * PALETTE_NAMES.length)]];
+	} else if (GRADIENT_PALETTES[name]) {
+		activePaletteName = name;
+		ACTIVE_PALETTE = GRADIENT_PALETTES[name];
+	}
+}
 
 function lerpColor(t: number): [number, number, number] {
 	const stops = ACTIVE_PALETTE;

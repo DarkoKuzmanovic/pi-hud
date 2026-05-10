@@ -55,14 +55,30 @@ export function formatCount(count: number): string {
 	return `${Math.round(count)}`;
 }
 
+// --- ASCII fallback mode ---
+
+let asciiMode = false;
+export function setAsciiMode(v: boolean): void { asciiMode = v; }
+export function isAsciiMode(): boolean { return asciiMode; }
+
+// Separator glyphs — powerline in normal mode, plain brackets in ASCII mode
+export const SEP_L = () => asciiMode ? "[" : "\ue0b6";
+export const SEP_R = () => asciiMode ? "]" : "\ue0b4";
+
+// Icon fallbacks: Nerd Font PUA codepoints → readable alternatives
+export const ICON_PROJECT = () => asciiMode ? "\u03c0" : "\ue22c";       // π vs Nerd Font pi
+export const ICON_FOLDER = () => asciiMode ? "\ud83d\udcc1" : "\udb80\udc5c"; // 📁 vs Nerd Font folder
+export const ICON_MODEL  = () => asciiMode ? "\ud83e\udd16" : "\udb80\ude29";  // 🤖 vs Nerd Font robot
+export const ICON_BRANCH = () => asciiMode ? "\u2387" : "\udb80\udc65";  // ⎇ vs Nerd Font git-branch
+export const ICON_CTX    = () => asciiMode ? "\u229e" : "\udb80\udd1c";  // ⊞ vs Nerd Font context
 // --- Chip renderers ---
 
 export function chip(text: string, theme: ThemeAccess): string {
-	return `${theme.fg("accent", "\ue0b6")}${theme.inverse(` ${text} `)}${theme.fg("accent", "\ue0b4")}`;
+	return `${theme.fg("accent", SEP_L())}${theme.inverse(` ${text} `)}${theme.fg("accent", SEP_R())}`;
 }
 
 export function dimChip(text: string, theme: ThemeAccess): string {
-	return `${theme.fg("muted", "\ue0b6")}${theme.inverse(` ${text} `)}${theme.fg("muted", "\ue0b4")}`;
+	return `${theme.fg("muted", SEP_L())}${theme.inverse(` ${text} `)}${theme.fg("muted", SEP_R())}`;
 }
 
 export function quotaChip(window: UsageWindow, theme: ThemeAccess): string {
@@ -72,7 +88,7 @@ export function quotaChip(window: UsageWindow, theme: ThemeAccess): string {
 	const pctText = pct === undefined || !Number.isFinite(pct) ? "n/a" : formatPercent(pct);
 	const reset = window.resetAt ? ` (${fmtDuration(window.resetAt - Date.now())})` : "";
 	const text = ` ${label} ${pctText}${reset} `;
-	return `${theme.fg(color, "\ue0b6")}${theme.fg(color, theme.inverse(text))}${theme.fg(color, "\ue0b4")}`;
+	return `${theme.fg(color, SEP_L())}${theme.fg(color, theme.inverse(text))}${theme.fg(color, SEP_R())}`;
 }
 
 export function thinkingChip(level: string, theme: ThemeAccess): string {
@@ -83,7 +99,28 @@ export function thinkingChip(level: string, theme: ThemeAccess): string {
 		level === "low" ? "thinkingLow" :
 		level === "minimal" ? "thinkingMinimal" :
 		"muted";
-	return `${theme.fg(color, "\ue0b6")}${theme.fg(color, theme.inverse(` \u25c7 ${level} `))}${theme.fg(color, "\ue0b4")}`;
+	return `${theme.fg(color, SEP_L())}${theme.fg(color, theme.inverse(` \u25c7 ${level} `))}${theme.fg(color, SEP_R())}`;
+}
+// --- Cost + status helpers ---
+
+export function costStr(cost: number): string {
+	if (!Number.isFinite(cost) || cost <= 0) return "";
+	return `$${cost.toFixed(2)}`;
+}
+
+export function statusDot(status: string, theme: ThemeAccess): string {
+	const color =
+		status === "error" || status === "auth-needed" ? "error" :
+		status === "unknown" ? "warning" :
+		"muted";
+	const dot = asciiMode ? "\u25cf" : "\u25cf"; // ● works in both modes
+	return status === "ok" ? "" : theme.fg(color, ` ${dot}`);
+}
+
+export function paletteChip(text: string, rgb: [number, number, number], theme: ThemeAccess): string {
+	const [r, g, b] = rgb;
+	const fgOpen = `\x1b[38;2;${r};${g};${b}m`;
+	return `${fgOpen}${SEP_L()}\x1b[39m${theme.inverse(` ${text} `)}${fgOpen}${SEP_R()}\x1b[39m`;
 }
 
 // --- Usage rendering ---
@@ -98,10 +135,13 @@ export function renderWindow(window: UsageWindow, theme: ThemeAccess): string {
 	return `${theme.fg("muted", `${label}:`)} ${theme.fg(usageColor(pct), pctText)}${theme.fg("dim", countText + reset)}`;
 }
 
-export function renderProviderUsage(provider: ProviderUsage, theme: ThemeAccess): string {
+export function renderProviderUsage(provider: ProviderUsage, theme: ThemeAccess, palette?: [number, number, number][]): string {
+	const providerChip = palette
+		? paletteChip(`${provider.icon} ${provider.name}`, palette[0], theme)
+		: chip(`${provider.icon} ${provider.name}`, theme);
 	const windows = provider.windows.map((w) => renderWindow(w, theme)).join(theme.fg("dim", "  "));
 	const suffix = provider.status === "ok" ? "" : ` ${theme.fg(provider.status === "error" ? "error" : "dim", provider.message ?? provider.status)}`;
-	return `${chip(`${provider.icon} ${provider.name}`, theme)}  ${windows}${suffix}`;
+	return `${providerChip}  ${windows}${suffix}`;
 }
 
 // --- Layout ---

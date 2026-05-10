@@ -3,9 +3,10 @@ import { truncateToWidth } from "./format.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ProviderUsage, ThemeAccess } from "../types.js";
 import type { SessionTotals } from "./context.js";
-import { fmtInt, fmtDuration, compactPath, compactModelName, chip, dimChip, thinkingChip, padBetween, renderProviderUsage } from "./format.js";
+import { fmtInt, fmtDuration, compactPath, compactModelName, chip, dimChip, thinkingChip, padBetween, renderProviderUsage, costStr, statusDot, ICON_PROJECT, ICON_FOLDER, ICON_MODEL, ICON_BRANCH, isAsciiMode } from "./format.js";
 import { formatContext } from "./context.js";
 import type { GitDirtyResult, GitRemoteResult, GitLastCommit } from "../git.js";
+import { getActivePalette } from "./header.js";
 
 const HIDDEN_STATUSES = new Set(["claude-oauth-ready", "claude-oauth-issue"]);
 
@@ -34,6 +35,10 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 	return (width: number) => {
 		try {
 			const { ctx, activeUsage, totals, thinkingLevel, activeStartedAt, lastRunMs, lastTps, gitDirty, gitRemote, gitLastCommit, palimpsest } = deps;
+			const palette = getActivePalette();
+			const ascii = isAsciiMode();
+			const vert = ascii ? "|" : "\u2502";
+			const dotSep = ascii ? "\u00b7" : "\u00b7"; // middle dot renders in both modes
 
 			const cwdName = basename(ctx.cwd) || ctx.cwd;
 			const cwdPath = compactPath(ctx.cwd);
@@ -42,30 +47,40 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 			const statuses = [...footerData.getExtensionStatuses().entries()]
 				.filter(([key, val]) => !HIDDEN_STATUSES.has(key) && Boolean(val))
 				.map(([, val]) => val)
-				.join(theme.fg("dim", " \u2502 "))
-				.replace(/\u00b7/g, theme.fg("dim", "\u2502"))
-				.replace(/\u2022/g, theme.fg("dim", "\u2502"));
+				.join(theme.fg("dim", ` ${vert} `))
+				.replace(/\u00b7/g, theme.fg("dim", vert))
+				.replace(/\u2022/g, theme.fg("dim", vert));
 			const model = ctx.model ? compactModelName(ctx.model.id) : "no model";
 			const run = activeStartedAt ? `\udb81\udcef ${fmtDuration(Date.now() - activeStartedAt)}` : lastRunMs ? `\udb81\udcef ${fmtDuration(lastRunMs)}` : "\udb81\udcef idle";
 			const speed = lastTps ? `\u26a1 ${lastTps.toFixed(1)} tok/s` : "";
+			const cost = costStr(totals.cost);
 
+			// --- Line 1: identity + navigation ---
 			const left1 = [
-				chip("\ue22c", theme),
-				dimChip(`\udb80\udc5c ${cwdName}`, theme),
+				chip(ICON_PROJECT(), theme),
+				dimChip(`${ICON_FOLDER()} ${cwdName}`, theme),
 				theme.fg("dim", cwdPath),
-				branch ? `${theme.fg("muted", "\udb80\udc65")} ${branch}` : "",
+				branch ? `${theme.fg("muted", ICON_BRANCH())} ${branch}` : "",
 				gitDirty.text ? theme.fg(gitDirty.isClean ? "success" : "warning", gitDirty.text) : "",
-				dimChip(`\udb80\ude29 ${model}`, theme),
+				dimChip(`${ICON_MODEL()} ${model}`, theme),
 				thinkingChip(thinkingLevel, theme),
 			].filter(Boolean).join(theme.fg("dim", "  "));
 
 			const right1 = [
 				formatContext(ctx),
-				`\u2191${fmtInt(totals.input)} \u2193${fmtInt(totals.output)}`,
-				run,
-				speed,
-			].filter(Boolean).join(theme.fg("dim", "  \u2502  "));
+				statusDot(activeUsage.status, theme),
+			].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
 
+			// --- Line 2: performance metrics + quota ---
+			const tokenStr = totals.input > 0 || totals.output > 0
+				? `\u2191${fmtInt(totals.input)} \u2193${fmtInt(totals.output)}${cost ? ` ${cost}` : ""}`
+				: "";
+			const left2 = [tokenStr, run, speed].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
+
+			// Right side of line 2: quota bar (palette-tinted provider chip)
+			const right2 = renderProviderUsage(activeUsage, theme, palette);
+
+			// --- Line 3: git details + extension statuses ---
 			const syncParts: string[] = [];
 			if (!gitRemote.hasRemote) {
 				syncParts.push(theme.fg("error", "\u26a0 no remote"));
@@ -79,11 +94,11 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 			const commit = gitLastCommit.hash
 				? `${theme.fg("muted", gitLastCommit.hash)} ${truncateToWidth(gitLastCommit.subject, 36, "\u2026")} ${theme.fg("dim", gitLastCommit.age)}`
 				: "";
-			const left2 = [gitSync, commit, statuses].filter(Boolean).join(theme.fg("dim", "  \u2502  "));
-			const right2 = renderProviderUsage(activeUsage, theme);
+			const left3 = [gitSync, commit, statuses].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
+			const right3 = "";
 
-			// Palimpsest line (only when active)
-			let line3 = "";
+			// --- Line 4: Palimpsest (only when active) ---
+			let line4 = "";
 			const hasPalimpsest = palimpsest.questsTotal > 0 || palimpsest.instinctsTotal > 0;
 			if (hasPalimpsest) {
 				const plParts: string[] = [];
@@ -93,26 +108,30 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 					const bar = "\u25a0".repeat(filled) + "\u25a1".repeat(4 - filled);
 					const questColor = palimpsest.questsDone === palimpsest.questsTotal ? "success" : "accent";
 					const questStatus = `${theme.fg(questColor, bar)} ${palimpsest.questsDone}/${palimpsest.questsTotal} quests`;
-					const current = palimpsest.currentQuest ? theme.fg("muted", ` \u00b7 ${truncateToWidth(palimpsest.currentQuest, 40, "\u2026")}`) : "";
-					plParts.push(`\u2503 ${questStatus}${current}`);
+					const current = palimpsest.currentQuest ? theme.fg("muted", ` ${dotSep} ${truncateToWidth(palimpsest.currentQuest, 40, "\u2026")}`) : "";
+					plParts.push(`${vert} ${questStatus}${current}`);
 				}
 
 				const instLabel = palimpsest.instinctsTotal > 0
 					? `${palimpsest.instinctsTotal} instincts${palimpsest.instinctsProject > 0 ? ` (${palimpsest.instinctsProject} project)` : ""}`
 					: "";
 				const obsLabel = palimpsest.observations > 0 ? `${palimpsest.observations} obs` : "";
-				const metaParts = [instLabel, obsLabel].filter(Boolean).join(theme.fg("dim", " \u00b7 "));
+				const metaParts = [instLabel, obsLabel].filter(Boolean).join(theme.fg("dim", ` ${dotSep} `));
 
-				const left3 = plParts.length > 0
+				const left4 = plParts.length > 0
 					? plParts[0]
 					: `${theme.fg("dim", "\ud83d\udcdc")} palimpsest`;
-				const right3 = metaParts ? theme.fg("dim", `\ud83d\udcdc ${metaParts}`) : "";
-				line3 = padBetween(left3, right3, width);
+				const right4 = metaParts ? theme.fg("dim", `\ud83d\udcdc ${metaParts}`) : "";
+				line4 = padBetween(left4, right4, width);
 			}
 
-			const lines = [padBetween(left1, right1, width), padBetween(left2, right2, width)];
-			if (line3) lines.push(line3);
-			return lines.map((line) => truncateToWidth(line, width, "…"));
+			const lines = [
+				padBetween(left1, right1, width),
+				padBetween(left2, right2, width),
+				padBetween(left3, right3, width),
+			];
+			if (line4) lines.push(line4);
+			return lines.filter((l) => l.length > 0).map((line) => truncateToWidth(line, width, "\u2026"));
 		} catch (err: any) {
 			return [theme.fg("error", `pi-hud: ${err?.message ?? err}`)];
 		}

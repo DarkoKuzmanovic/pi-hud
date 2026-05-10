@@ -1,0 +1,57 @@
+{
+  "name": "pi-hud",
+  "version": "1.0.0",
+  "description": "Status HUD for Pi coding agent — displays provider quota, session stats, git status, and model info in the terminal footer and header",
+  "author": "Darko Kuzmanovic",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DarkoKuzmanovic/pi-hud.git"
+  },
+  "homepage": "https://github.com/DarkoKuzmanovic/pi-hud#readme",
+  "bugs": {
+    "url": "https://github.com/DarkoKuzmanovic/pi-hud/issues"
+  },
+  "keywords": [
+    "pi-package",
+    "pi",
+    "pi-coding-agent",
+    "hud",
+    "status",
+    "quota",
+    "tui"
+  ],
+  "files": [
+    "index.ts",
+    "types.ts",
+    "git.ts",
+    "cookies.ts",
+    "render/**/*.ts",
+    "render/**/*.js",
+    "providers/**/*.ts",
+    "install.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "typescript": "^5.8.0"
+  }
+}

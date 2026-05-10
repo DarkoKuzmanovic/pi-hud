@@ -1,11 +1,11 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { fmtInt } from "./format.js";
+import { fmtInt, ICON_CTX } from "./format.js";
 
 export function formatContext(ctx: ExtensionContext): string {
 	const usage = ctx.getContextUsage();
 	if (!usage) return "ctx n/a";
 	const pct = usage.contextWindow ? ` ${Math.round((usage.tokens / usage.contextWindow) * 100)}%` : "";
-	return `\udb80\udd1c ${fmtInt(usage.tokens)}${usage.contextWindow ? `/${fmtInt(usage.contextWindow)}` : ""}${pct}`;
+	return `${ICON_CTX()} ${fmtInt(usage.tokens)}${usage.contextWindow ? `/${fmtInt(usage.contextWindow)}` : ""}${pct}`;
 }
 
 /** Cached session totals — updated incrementally on message_end instead of recomputed per render tick. */
