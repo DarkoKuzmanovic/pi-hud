@@ -24,7 +24,12 @@ export function fmtDuration(ms: number): string {
 
 export function compactPath(cwd: string): string {
 	const home = homedir();
-	const next = cwd === home ? "~" : cwd.startsWith(`${home}/`) ? `~/${cwd.slice(home.length + 1)}` : cwd;
+	const next =
+		cwd === home
+			? "~"
+			: cwd.startsWith(`${home}/`)
+				? `~/${cwd.slice(home.length + 1)}`
+				: cwd;
 	const parts = next.split("/").filter(Boolean);
 	if (parts.length <= 3) return next;
 	return `${parts[0] === "~" ? "~/" : "/"}${parts.slice(-3).join("/")}`;
@@ -40,7 +45,9 @@ export function compactModelName(id: string): string {
 
 // --- Color helpers ---
 
-export function usageColor(percent: number | undefined): "success" | "warning" | "error" | "muted" {
+export function usageColor(
+	percent: number | undefined,
+): "success" | "warning" | "error" | "muted" {
 	if (percent === undefined || !Number.isFinite(percent)) return "muted";
 	if (percent >= 90) return "error";
 	if (percent >= 75) return "warning";
@@ -58,19 +65,23 @@ export function formatCount(count: number): string {
 // --- ASCII fallback mode ---
 
 let asciiMode = false;
-export function setAsciiMode(v: boolean): void { asciiMode = v; }
-export function isAsciiMode(): boolean { return asciiMode; }
+export function setAsciiMode(v: boolean): void {
+	asciiMode = v;
+}
+export function isAsciiMode(): boolean {
+	return asciiMode;
+}
 
 // Separator glyphs — powerline in normal mode, plain brackets in ASCII mode
-export const SEP_L = () => asciiMode ? "[" : "\ue0b6";
-export const SEP_R = () => asciiMode ? "]" : "\ue0b4";
+export const SEP_L = () => (asciiMode ? "[" : "\ue0b6");
+export const SEP_R = () => (asciiMode ? "]" : "\ue0b4");
 
 // Icon fallbacks: Nerd Font PUA codepoints → readable alternatives
-export const ICON_PROJECT = () => asciiMode ? "\u03c0" : "\ue22c";       // π vs Nerd Font pi
-export const ICON_FOLDER = () => asciiMode ? "\ud83d\udcc1" : "\udb80\udc5c"; // 📁 vs Nerd Font folder
-export const ICON_MODEL  = () => asciiMode ? "\ud83e\udd16" : "\udb80\ude29";  // 🤖 vs Nerd Font robot
-export const ICON_BRANCH = () => asciiMode ? "\u2387" : "\udb80\udc65";  // ⎇ vs Nerd Font git-branch
-export const ICON_CTX    = () => asciiMode ? "\u229e" : "\udb80\udd1c";  // ⊞ vs Nerd Font context
+export const ICON_PROJECT = () => (asciiMode ? "\u03c0" : "\ue22c"); // π vs Nerd Font pi
+export const ICON_FOLDER = () => (asciiMode ? "\ud83d\udcc1" : "\udb80\udc5c"); // 📁 vs Nerd Font folder
+export const ICON_MODEL = () => (asciiMode ? "\ud83e\udd16" : "\udb80\ude29"); // 🤖 vs Nerd Font robot
+export const ICON_BRANCH = () => (asciiMode ? "\u2387" : "\udb80\udc65"); // ⎇ vs Nerd Font git-branch
+export const ICON_CTX = () => (asciiMode ? "\u229e" : "\udb80\udd1c"); // ⊞ vs Nerd Font context
 // --- Chip renderers ---
 
 export function chip(text: string, theme: ThemeAccess): string {
@@ -83,22 +94,36 @@ export function dimChip(text: string, theme: ThemeAccess): string {
 
 export function quotaChip(window: UsageWindow, theme: ThemeAccess): string {
 	const pct = window.usedPercent;
-	const color = pct === undefined || !Number.isFinite(pct) ? "muted" : usageColor(pct);
-	const label = window.label === "week" ? "7d" : window.label === "month" ? "30d" : window.label;
-	const pctText = pct === undefined || !Number.isFinite(pct) ? "n/a" : formatPercent(pct);
-	const reset = window.resetAt ? ` (${fmtDuration(window.resetAt - Date.now())})` : "";
+	const color =
+		pct === undefined || !Number.isFinite(pct) ? "muted" : usageColor(pct);
+	const label =
+		window.label === "week"
+			? "7d"
+			: window.label === "month"
+				? "30d"
+				: window.label;
+	const pctText =
+		pct === undefined || !Number.isFinite(pct) ? "n/a" : formatPercent(pct);
+	const reset = window.resetAt
+		? ` (${fmtDuration(window.resetAt - Date.now())})`
+		: "";
 	const text = ` ${label} ${pctText}${reset} `;
 	return `${theme.fg(color, SEP_L())}${theme.fg(color, theme.inverse(text))}${theme.fg(color, SEP_R())}`;
 }
 
 export function thinkingChip(level: string, theme: ThemeAccess): string {
 	const color =
-		level === "xhigh" ? "thinkingXhigh" :
-		level === "high" ? "thinkingHigh" :
-		level === "medium" ? "thinkingMedium" :
-		level === "low" ? "thinkingLow" :
-		level === "minimal" ? "thinkingMinimal" :
-		"muted";
+		level === "xhigh"
+			? "thinkingXhigh"
+			: level === "high"
+				? "thinkingHigh"
+				: level === "medium"
+					? "thinkingMedium"
+					: level === "low"
+						? "thinkingLow"
+						: level === "minimal"
+							? "thinkingMinimal"
+							: "muted";
 	return `${theme.fg(color, SEP_L())}${theme.fg(color, theme.inverse(` \u25c7 ${level} `))}${theme.fg(color, SEP_R())}`;
 }
 // --- Cost + status helpers ---
@@ -110,14 +135,20 @@ export function costStr(cost: number): string {
 
 export function statusDot(status: string, theme: ThemeAccess): string {
 	const color =
-		status === "error" || status === "auth-needed" ? "error" :
-		status === "unknown" ? "warning" :
-		"muted";
+		status === "error" || status === "auth-needed"
+			? "error"
+			: status === "unknown"
+				? "warning"
+				: "muted";
 	const dot = asciiMode ? "\u25cf" : "\u25cf"; // ● works in both modes
 	return status === "ok" ? "" : theme.fg(color, ` ${dot}`);
 }
 
-export function paletteChip(text: string, rgb: [number, number, number], theme: ThemeAccess): string {
+export function paletteChip(
+	text: string,
+	rgb: [number, number, number],
+	theme: ThemeAccess,
+): string {
 	const [r, g, b] = rgb;
 	const fgOpen = `\x1b[38;2;${r};${g};${b}m`;
 	return `${fgOpen}${SEP_L()}\x1b[39m${theme.inverse(` ${text} `)}${fgOpen}${SEP_R()}\x1b[39m`;
@@ -127,20 +158,45 @@ export function paletteChip(text: string, rgb: [number, number, number], theme: 
 
 export function renderWindow(window: UsageWindow, theme: ThemeAccess): string {
 	const pct = window.usedPercent;
-	const hasCount = window.usedCount !== undefined && window.limitCount !== undefined;
-	const pctText = pct === undefined || !Number.isFinite(pct) ? "n/a" : formatPercent(pct, hasCount);
-	const countText = hasCount ? ` (${formatCount(window.usedCount!)}/${formatCount(window.limitCount!)})` : "";
-	const reset = window.resetAt ? ` (${fmtDuration(window.resetAt - Date.now())})` : "";
-	const label = window.label === "week" ? "7d" : window.label === "month" ? "30d" : window.label;
+	const hasCount =
+		window.usedCount !== undefined && window.limitCount !== undefined;
+	const pctText =
+		pct === undefined || !Number.isFinite(pct)
+			? "n/a"
+			: formatPercent(pct, hasCount);
+	const countText = hasCount
+		? ` (${formatCount(window.usedCount!)}/${formatCount(window.limitCount!)})`
+		: "";
+	const reset = window.resetAt
+		? ` (${fmtDuration(window.resetAt - Date.now())})`
+		: "";
+	const label =
+		window.label === "week"
+			? "7d"
+			: window.label === "month"
+				? "30d"
+				: window.label === "daily"
+					? "1d"
+					: window.label;
 	return `${theme.fg("muted", `${label}:`)} ${theme.fg(usageColor(pct), pctText)}${theme.fg("dim", countText + reset)}`;
 }
 
-export function renderProviderUsage(provider: ProviderUsage, theme: ThemeAccess, palette?: [number, number, number][]): string {
+export function renderProviderUsage(
+	provider: ProviderUsage,
+	theme: ThemeAccess,
+	palette?: [number, number, number][],
+): string {
 	const providerChip = palette
 		? paletteChip(`${provider.icon} ${provider.name}`, palette[0], theme)
 		: chip(`${provider.icon} ${provider.name}`, theme);
-	const windows = provider.windows.map((w) => renderWindow(w, theme)).join(theme.fg("dim", "  "));
-	const suffix = provider.status === "ok" ? "" : ` ${theme.fg(provider.status === "error" ? "error" : "dim", provider.message ?? provider.status)}`;
+	const windows = provider.windows
+		.map((w) => renderWindow(w, theme))
+		.join(theme.fg("dim", "  "));
+	const suffix = provider.message
+		? ` ${theme.fg(provider.status === "error" ? "error" : "dim", provider.message)}`
+		: provider.status !== "ok"
+			? ` ${theme.fg("dim", provider.status)}`
+			: "";
 	return `${providerChip}  ${windows}${suffix}`;
 }
 
@@ -151,7 +207,10 @@ export function padBetween(left: string, right: string, width: number): string {
 	const rightWidth = visibleWidth(right);
 	if (rightWidth >= width) return truncateToWidth(right, width, "…");
 	const leftWidth = width - rightWidth - 1;
-	const fittedLeft = visibleWidth(left) > leftWidth ? truncateToWidth(left, leftWidth, "…") : left;
+	const fittedLeft =
+		visibleWidth(left) > leftWidth
+			? truncateToWidth(left, leftWidth, "…")
+			: left;
 	const space = Math.max(1, width - visibleWidth(fittedLeft) - rightWidth);
 	const raw = fittedLeft + " ".repeat(space) + right;
 	return visibleWidth(raw) > width ? truncateToWidth(raw, width, "…") : raw;

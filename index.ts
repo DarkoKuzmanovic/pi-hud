@@ -19,6 +19,7 @@ import {
 	ollamaToProvider,
 } from "./providers/ollama-cloud.js";
 import { fetchWaferUsage, waferToProvider } from "./providers/wafer.js";
+import { fetchCrofaiUsage, crofaiToProvider } from "./providers/crofai.js";
 import {
 	fetchOpenCodeUsage,
 	opencodeToProvider,
@@ -45,13 +46,14 @@ import { setAsciiMode, isAsciiMode } from "./render/format.js";
 
 // --- Constants ---
 const QUOTA_REFRESH_MS = 60_000;
-const WAFER_QUOTA_REFRESH_MS = 300_000;
+const WAFER_QUOTA_REFRESH_MS = 60_000;
 const GIT_REFRESH_MS = 5_000;
 
 // --- Provider helpers ---
 const isOllamaProvider = (provider?: string): boolean =>
 	provider === "ollama" || provider === "ollama-cloud";
 const isWaferProvider = (provider?: string): boolean => provider === "wafer";
+const isCrofaiProvider = (provider?: string): boolean => provider === "crofai";
 const isOpenCodeProvider = (provider?: string): boolean =>
 	provider === "opencode" || provider === "opencode-go";
 
@@ -97,6 +99,14 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "5h" }],
 	};
+	let crofaiUsage: ProviderUsage = {
+		id: "crofai",
+		name: "CrofAI",
+		icon: "🥖",
+		status: "unknown",
+		message: "loading",
+		windows: [{ label: "daily" }],
+	};
 	let opencodeUsage: ProviderUsage = {
 		id: "opencode",
 		name: "OpenCode",
@@ -111,6 +121,7 @@ export default function piHud(pi: ExtensionAPI) {
 	let ollamaInFlight: Promise<void> | null = null;
 	let waferInFlight: Promise<void> | null = null;
 	let opencodeInFlight: Promise<void> | null = null;
+	let crofaiInFlight: Promise<void> | null = null;
 
 	// Cached session totals (incremental, not O(n) per render)
 	let totals = initSessionTotals();
@@ -126,13 +137,6 @@ export default function piHud(pi: ExtensionAPI) {
 	let cachedGitLastCommit: GitLastCommit = { hash: "", subject: "", age: "" };
 	let gitRefreshInProgress = false;
 
-	// Palimpsest state
-	let plQuestsDone = 0;
-	let plQuestsTotal = 0;
-	let plCurrentQuest: string | null = null;
-	let plInstinctsTotal = 0;
-	let plInstinctsProject = 0;
-	let plObservations = 0;
 
 	// HUD UI handle for event-driven re-renders
 	let footerTui: { requestRender: () => void } | null = null;
@@ -144,6 +148,7 @@ export default function piHud(pi: ExtensionAPI) {
 		if (isOllamaProvider(provider)) return ollamaUsage;
 		if (isWaferProvider(provider)) return waferUsage;
 		if (isOpenCodeProvider(provider)) return opencodeUsage;
+		if (isCrofaiProvider(provider)) return crofaiUsage;
 		return codexUsage;
 	};
 
@@ -191,6 +196,16 @@ export default function piHud(pi: ExtensionAPI) {
 		return waferInFlight;
 	};
 
+	const refreshCrofai = async () => {
+		if (crofaiInFlight) return crofaiInFlight;
+		crofaiInFlight = (async () => {
+			crofaiUsage = crofaiToProvider(await fetchCrofaiUsage(), crofaiUsage);
+		})().finally(() => {
+			crofaiInFlight = null;
+		});
+		return crofaiInFlight;
+	};
+
 	const refreshOpenCode = async () => {
 		if (opencodeInFlight) return opencodeInFlight;
 		opencodeInFlight = (async () => {
@@ -210,6 +225,7 @@ export default function piHud(pi: ExtensionAPI) {
 		if (isOllamaProvider(provider)) return refreshOllama();
 		if (isWaferProvider(provider)) return refreshWafer();
 		if (isOpenCodeProvider(provider)) return refreshOpenCode();
+		if (isCrofaiProvider(provider)) return refreshCrofai();
 		return refreshCodex();
 	};
 
@@ -223,11 +239,24 @@ export default function piHud(pi: ExtensionAPI) {
 			gitLastCommitAsync(cwd),
 		])
 			.then(([dirty, remote, lastCommit]) => {
+				const changed =
+					dirty.text !== cachedGitDirty.text ||
+					dirty.isClean !== cachedGitDirty.isClean ||
+					remote.ahead !== cachedGitRemote.ahead ||
+					remote.behind !== cachedGitRemote.behind ||
+					remote.hasRemote !== cachedGitRemote.hasRemote ||
+					lastCommit.hash !== cachedGitLastCommit.hash ||
+					lastCommit.subject !== cachedGitLastCommit.subject ||
+					lastCommit.age !== cachedGitLastCommit.age;
 				cachedGitDirty = dirty;
 				cachedGitRemote = remote;
 				cachedGitLastCommit = lastCommit;
 				lastGitAt = Date.now();
 				gitRefreshInProgress = false;
+				// Only re-render if git data actually changed
+				if (changed) {
+					footerTui?.requestRender();
+				}
 			})
 			.catch(() => {
 				gitRefreshInProgress = false;
@@ -244,20 +273,37 @@ export default function piHud(pi: ExtensionAPI) {
 			footerTui = tui;
 			const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
 
-			// Wall-clock refresh at 30s: quota/git refresh checks + time-based display updates
+			// Wall-clock refresh at 30s: quota/git refresh checks + time-based display updates.
+			// Only requestRender() when something actually changed — unconditional re-renders
+			// cause the TUI to scroll the viewport back to the bottom, disrupting reading.
 			wallClockTimer = setInterval(() => {
 				const activeUsage = getActiveUsage(ctx);
 				const isWaferActive = isWaferProvider(ctx.model?.provider);
 				const quotaRefresh = isWaferActive
 					? WAFER_QUOTA_REFRESH_MS
 					: QUOTA_REFRESH_MS;
-				if (Date.now() - (activeUsage.updatedAt ?? 0) > quotaRefresh) {
-					void refreshActiveProvider(ctx).then(() => tui.requestRender());
+				const needsQuotaRefresh = Date.now() - (activeUsage.updatedAt ?? 0) > quotaRefresh;
+				if (needsQuotaRefresh) {
+					const prevUsage = JSON.stringify(activeUsage);
+					void refreshActiveProvider(ctx).then(() => {
+						const newUsage = JSON.stringify(getActiveUsage(ctx));
+						if (newUsage !== prevUsage) {
+							tui.requestRender();
+						}
+					});
 				}
-				if (Date.now() - lastGitAt > GIT_REFRESH_MS) {
+				const needsGitRefresh = Date.now() - lastGitAt > GIT_REFRESH_MS;
+				if (needsGitRefresh) {
 					refreshGitAsync(ctx.cwd);
 				}
-				tui.requestRender();
+				// Re-render when a live timer is active (the ⏱ duration display
+				// updates per-minute via fmtDuration). Quota and git refreshes are
+				// handled by their async callbacks — quota's then() and git's then()
+				// each call requestRender() only when data actually changed.
+				// When idle with no data changes, skip re-render entirely.
+				if (activeStartedAt !== null) {
+					tui.requestRender();
+				}
 			}, 30_000);
 
 			return {
@@ -275,26 +321,6 @@ export default function piHud(pi: ExtensionAPI) {
 						const activeUsage = getActiveUsage(ctx);
 						const thinking = pi.getThinkingLevel();
 
-						// Palimpsest state
-						try {
-							pi.events.emit("palimpsest:get-state", (state: any) => {
-								if (state?.quests) {
-									const progress = state.quests.progress();
-									plQuestsDone = progress.done;
-									plQuestsTotal = progress.total;
-									plCurrentQuest = state.quests.currentQuest();
-								}
-								if (state?.instincts) {
-									plInstinctsTotal = state.instincts.project;
-									plInstinctsProject = state.instincts.project;
-								}
-								plObservations = state?.observations ?? 0;
-							});
-						} catch {
-							/* Palimpsest state optional — best-effort */
-							// pi-lens-ignore: error-swallowing
-							/* Palimpsest state optional — best-effort */
-						}
 
 						return renderFooter(
 							{
@@ -308,14 +334,6 @@ export default function piHud(pi: ExtensionAPI) {
 								gitDirty: cachedGitDirty,
 								gitRemote: cachedGitRemote,
 								gitLastCommit: cachedGitLastCommit,
-								palimpsest: {
-									questsDone: plQuestsDone,
-									questsTotal: plQuestsTotal,
-									currentQuest: plCurrentQuest,
-									instinctsTotal: plInstinctsTotal,
-									instinctsProject: plInstinctsProject,
-									observations: plObservations,
-								},
 							},
 							theme,
 							footerData,
@@ -372,27 +390,27 @@ export default function piHud(pi: ExtensionAPI) {
 				})(tui, editorTheme, keybindings);
 				return editor;
 			});
-
-			ctx.ui.setHeader((_tui, theme) => ({
-				render(width: number): string[] {
-					try {
-						const activeUsage = getActiveUsage(ctx);
-						const thinking = pi.getThinkingLevel();
-						return renderHeader(
-							{
-								ctx,
-								activeUsage,
-								thinkingLevel: thinking,
-							},
-							theme,
-						)(width);
-					} catch {
-						return [theme.fg("muted", "pi-hud")];
-					}
-				},
-				invalidate() {},
-			}));
 		}
+
+		ctx.ui.setHeader((_tui, theme) => ({
+			render(width: number): string[] {
+				try {
+					const activeUsage = getActiveUsage(ctx);
+					const thinking = pi.getThinkingLevel();
+					return renderHeader(
+						{
+							ctx,
+							activeUsage,
+							thinkingLevel: thinking,
+						},
+						theme,
+					)(width);
+				} catch {
+					return [theme.fg("muted", "pi-hud")];
+				}
+			},
+			invalidate() {},
+		}));
 	});
 
 	pi.on("model_select", (_event, ctx) => {
@@ -540,6 +558,7 @@ export default function piHud(pi: ExtensionAPI) {
 					`Anthropic: ${anthropicUsage.status}${anthropicUsage.message ? ` (${anthropicUsage.message})` : ""}`,
 					`Ollama: ${ollamaUsage.status}${ollamaUsage.message ? ` (${ollamaUsage.message})` : ""}`,
 					`Wafer: ${waferUsage.status}${waferUsage.message ? ` (${waferUsage.message})` : ""}`,
+					`CrofAI: ${crofaiUsage.status}${crofaiUsage.message ? ` (${crofaiUsage.message})` : ""}`,
 					`OpenCode: ${opencodeUsage.status}${opencodeUsage.message ? ` (${opencodeUsage.message})` : ""}`,
 				].join("\n"),
 				"info",

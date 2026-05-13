@@ -1,120 +1,90 @@
-import { readWaferCookies } from "../cookies.js";
-import { fetchWithAuth, FetchError, readWaferAuth } from "./shared.js";
-import type { WaferUsageData, WaferFetchResult, ProviderUsage } from "../types.js";
+import { readWaferAuth } from "./shared.js";
+import type {
+	WaferUsageData,
+	WaferFetchResult,
+	ProviderUsage,
+} from "../types.js";
 
-const WAFER_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const QUOTA_URL = "https://pass.wafer.ai/v1/inference/quota";
 
-function htmlToText(html: string): string {
-	return html
-		.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-		.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-		.replace(/<[^>]+>/g, " ")
-		.replace(/&nbsp;/gi, " ")
-		.replace(/&amp;/gi, "&")
-		.replace(/&#x2F;|&#47;/gi, "/")
-		.replace(/\s+/g, " ")
-		.trim();
+interface QuotaResponse {
+	window_end?: string;
+	seconds_to_window_end?: number;
+	request_count?: number;
+	included_request_limit?: number;
+	current_period_used_percent?: number;
 }
 
-function parseNumber(text: string | undefined): number | undefined {
-	if (!text) return undefined;
-	const n = Number.parseFloat(text.replace(/,/g, ""));
-	return Number.isFinite(n) ? n : undefined;
-}
-
-function parseRemainingMs(text: string): number | undefined {
-	const m = text.match(/(\d+)h\s*(?:(\d+)m)?\s*remaining/i);
-	if (!m) return undefined;
-	const hours = parseInt(m[1], 10);
-	const mins = m[2] ? parseInt(m[2], 10) : 0;
-	return Date.now() + hours * 3_600_000 + mins * 60_000;
-}
-
-function parseWaferUsage(html: string): WaferUsageData | null {
+async function fetchQuota(apiKey: string): Promise<QuotaResponse | null> {
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), 10_000);
 	try {
-		const text = htmlToText(html);
-		const windowStart = text.search(/WAFER PASS WINDOW/i);
-		const windowEnd = windowStart >= 0 ? text.slice(windowStart).search(/OVERAGE BILLING|RECENT CLOSED WINDOWS/i) : -1;
-		const windowText = windowStart >= 0
-			? text.slice(windowStart, windowEnd > 0 ? windowStart + windowEnd : undefined)
-			: text;
-
-		const requestMatch = windowText.match(/REQUESTS\s*([\d,]+)\s*\/\s*([\d,]+)/i);
-		const usedMatch = windowText.match(/USED\s*([\d.]+)\s*%/i);
-		const requests = parseNumber(requestMatch?.[1]);
-		const requestLimit = parseNumber(requestMatch?.[2]);
-		const usedPercent = parseNumber(usedMatch?.[1]);
-		const remainingMs = parseRemainingMs(windowText);
-		if (requests !== undefined && requestLimit !== undefined) {
-			return {
-				windowPercent: usedPercent ?? (requestLimit > 0 ? (requests / requestLimit) * 100 : 0),
-				windowRequests: requests,
-				windowRequestLimit: requestLimit,
-				windowResetAt: remainingMs ?? 0,
-			};
-		}
-
-		const pctMatch = html.match(/data-percent="([\d.]+)"/);
-		const resetMatch = html.match(/data-reset="([^"]+)"/);
-		if (pctMatch) {
-			return {
-				windowPercent: parseFloat(pctMatch[1]),
-				windowResetAt: resetMatch ? Date.parse(resetMatch[1]) : 0,
-			};
-		}
-
-		const textPctMatch = windowText.match(/([\d.]+)\s*%/);
-		if (textPctMatch) {
-			return {
-				windowPercent: parseFloat(textPctMatch[1]),
-				windowResetAt: 0,
-			};
-		}
-
-		return null;
+		const res = await fetch(QUOTA_URL, {
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				Accept: "application/json",
+				"Accept-Encoding": "identity",
+			},
+			signal: controller.signal,
+		});
+		if (!res.ok) return null;
+		return (await res.json()) as QuotaResponse;
 	} catch {
 		return null;
+	} finally {
+		clearTimeout(timer);
 	}
 }
 
 export async function fetchWaferUsage(): Promise<WaferFetchResult> {
-	const cookieHeader = readWaferCookies();
 	const waferAuth = readWaferAuth();
-	if (!cookieHeader && !waferAuth) return { usage: null, status: "auth-needed", message: "login" };
+	if (!waferAuth)
+		return { usage: null, status: "auth-needed", message: "login" };
 
-	try {
-		const headers: Record<string, string> = {
-			Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-		};
-		if (cookieHeader) headers.Cookie = cookieHeader;
-		if (waferAuth) headers.Authorization = `Bearer ${waferAuth.access}`;
+	const quota = await fetchQuota(waferAuth.access);
+	if (!quota) return { usage: null, status: "error", message: "quota" };
 
-		const { body } = await fetchWithAuth({
-			url: "https://app.wafer.ai/usage",
-			headers,
-			authNeededBodyPatterns: ["Sign in", "Continue with"],
-			maxBytes: WAFER_MAX_RESPONSE_BYTES,
-		});
+	const requestCount = quota.request_count;
+	const requestLimit = quota.included_request_limit;
 
-		const parsed = parseWaferUsage(body);
-		if (!parsed) return { usage: null, status: "error", message: "parse" };
-
-		return { usage: parsed, status: "ok" };
-	} catch (err) {
-		if (err instanceof FetchError) {
-			if (err.kind === "auth-needed") return { usage: null, status: "auth-needed", message: err.message };
-			return { usage: null, status: "error", message: err.message };
-		}
-		return { usage: null, status: "error", message: "network" };
+	if (typeof requestCount !== "number" || typeof requestLimit !== "number") {
+		return { usage: null, status: "error", message: "parse" };
 	}
+
+	const usedPercent =
+		typeof quota.current_period_used_percent === "number"
+			? quota.current_period_used_percent
+			: requestLimit > 0
+				? (requestCount / requestLimit) * 100
+				: 0;
+
+	// Compute windowResetAt from the API's window_end timestamp
+	let windowResetAt = 0;
+	if (quota.window_end) {
+		const ts = Date.parse(quota.window_end);
+		if (Number.isFinite(ts)) windowResetAt = ts;
+	}
+
+	return {
+		usage: {
+			windowPercent: usedPercent,
+			windowRequests: requestCount,
+			windowRequestLimit: requestLimit,
+			windowResetAt,
+		},
+		status: "ok",
+	};
 }
 
-export function waferToProvider(result: WaferFetchResult, previous?: ProviderUsage): ProviderUsage {
+export function waferToProvider(
+	result: WaferFetchResult,
+	previous?: ProviderUsage,
+): ProviderUsage {
 	if (result.status !== "ok") {
 		return {
 			id: "wafer",
 			name: "Wafer",
-			icon: "\ud83c\udf5e",
+			icon: "🍞",
 			status: result.status,
 			message: result.message,
 			updatedAt: Date.now(),
@@ -124,7 +94,7 @@ export function waferToProvider(result: WaferFetchResult, previous?: ProviderUsa
 	return {
 		id: "wafer",
 		name: "Wafer",
-		icon: "\ud83c\udf5e",
+		icon: "🍞",
 		status: "ok",
 		updatedAt: Date.now(),
 		windows: [

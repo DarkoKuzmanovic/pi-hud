@@ -1,7 +1,13 @@
 // --- Shared types for pi-hud ---
 
-export type WindowLabel = "5h" | "week" | "month";
-export type ProviderId = "codex" | "anthropic" | "ollama-cloud" | "wafer" | "opencode";
+export type WindowLabel = "5h" | "week" | "month" | "daily";
+export type ProviderId =
+	| "codex"
+	| "anthropic"
+	| "ollama-cloud"
+	| "wafer"
+	| "crofai"
+	| "opencode";
 export type ProviderStatus = "ok" | "unknown" | "auth-needed" | "error";
 
 export interface UsageWindow {
@@ -97,6 +103,19 @@ export interface WaferUsageData {
 
 export interface WaferFetchResult {
 	usage: WaferUsageData | null;
+	status: ProviderStatus;
+	message?: string;
+}
+
+export interface CrofAIUsageData {
+	windowRequests: number;
+	windowRequestLimit: number;
+	credits: number;
+	windowResetAt: number;
+}
+
+export interface CrofAIFetchResult {
+	usage: CrofAIUsageData | null;
 	status: ProviderStatus;
 	message?: string;
 }

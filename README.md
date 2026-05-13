@@ -13,7 +13,7 @@ A status HUD for [Pi](https://github.com/earendil-works/pi-coding-agent) that di
 | 🤖 Active model | Run duration + tok/s speed |
 | Thinking level chip | Provider quota bar |
 
-A second line shows git sync status (ahead/behind), last commit, and extension statuses. When [Palimpsest](https://github.com/earendil-works/palimpsest) is active, a third line shows quest progress and instinct/observation counts.
+A second line shows git sync status (ahead/behind), last commit, and extension statuses.
 
 ### Header (on session start)
 

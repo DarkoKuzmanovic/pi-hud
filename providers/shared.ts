@@ -15,21 +15,45 @@ export function readAuth(): Record<string, any> {
 
 export function readCodexAuth(): { access: string; accountId: string } | null {
 	const cred = readAuth()["openai-codex"];
-	if (!cred || cred.type !== "oauth" || typeof cred.access !== "string" || typeof cred.accountId !== "string") return null;
+	if (
+		!cred ||
+		cred.type !== "oauth" ||
+		typeof cred.access !== "string" ||
+		typeof cred.accountId !== "string"
+	)
+		return null;
 	return { access: cred.access, accountId: cred.accountId };
 }
 
 export function readAnthropicAuth(): { access: string } | null {
 	const cred = readAuth().anthropic;
-	if (!cred || cred.type !== "oauth" || typeof cred.access !== "string") return null;
+	if (!cred || cred.type !== "oauth" || typeof cred.access !== "string")
+		return null;
 	return { access: cred.access };
 }
 
 export function readWaferAuth(): { access: string } | null {
 	const cred = readAuth().wafer;
 	if (!cred) return null;
-	if (cred.type === "oauth" && typeof cred.access === "string") return { access: cred.access };
-	if (cred.type === "api_key" && typeof cred.key === "string") return { access: cred.key };
+	if (cred.type === "oauth" && typeof cred.access === "string")
+		return { access: cred.access };
+	if (cred.type === "api_key" && typeof cred.key === "string")
+		return { access: cred.key };
+	return null;
+}
+
+export function readCrofaiAuth(): { access: string } | null {
+	const cred = readAuth().crofai;
+	if (!cred) {
+		// Fall back to env var (pi-crofai supports CROFAI_API_KEY)
+		const env = process.env.CROFAI_API_KEY;
+		if (env) return { access: env };
+		return null;
+	}
+	if (cred.type === "oauth" && typeof cred.access === "string")
+		return { access: cred.access };
+	if (cred.type === "api_key" && typeof cred.key === "string")
+		return { access: cred.key };
 	return null;
 }
 
@@ -55,7 +79,12 @@ export interface FetchResult {
 
 export class FetchError extends Error {
 	constructor(
-		public readonly kind: "network" | "timeout" | "large" | "auth-needed" | "http-error",
+		public readonly kind:
+			| "network"
+			| "timeout"
+			| "large"
+			| "auth-needed"
+			| "http-error",
 		message: string,
 		public readonly statusCode?: number,
 	) {
@@ -123,7 +152,9 @@ export async function fetchWithAuth(opts: FetchOptions): Promise<FetchResult> {
 		}
 
 		const decoder = new TextDecoder();
-		const body = chunks.map((c) => decoder.decode(c, { stream: true })).join("") + decoder.decode();
+		const body =
+			chunks.map((c) => decoder.decode(c, { stream: true })).join("") +
+			decoder.decode();
 
 		// Check body patterns for auth-needed pages
 		for (const pattern of authNeededBodyPatterns) {

@@ -21,20 +21,11 @@ export interface FooterDeps {
 	gitDirty: GitDirtyResult;
 	gitRemote: GitRemoteResult;
 	gitLastCommit: GitLastCommit;
-	palimpsest: {
-		questsDone: number;
-		questsTotal: number;
-		currentQuest: string | null;
-		instinctsTotal: number;
-		instinctsProject: number;
-		observations: number;
-	};
 }
-
 export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: any): (width: number) => string[] {
 	return (width: number) => {
 		try {
-			const { ctx, activeUsage, totals, thinkingLevel, activeStartedAt, lastRunMs, lastTps, gitDirty, gitRemote, gitLastCommit, palimpsest } = deps;
+			const { ctx, activeUsage, totals, thinkingLevel, activeStartedAt, lastRunMs, lastTps, gitDirty, gitRemote, gitLastCommit } = deps;
 			const palette = getActivePalette();
 			const ascii = isAsciiMode();
 			const vert = ascii ? "|" : "\u2502";
@@ -80,8 +71,11 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 			// Right side of line 2: quota bar (palette-tinted provider chip)
 			const right2 = renderProviderUsage(activeUsage, theme, palette);
 
-			// --- Line 3: git details + extension statuses ---
-			const syncParts: string[] = [];
+			// --- Line 3: session ID + git details + extension statuses ---
+			const sessionId = ctx.sessionManager.getSessionId();
+			const sessionIdShort = sessionId ? sessionId.slice(0, 8) : "????????";
+			const sessionChip = theme.fg("muted", `\udb80\udda2 ${sessionIdShort}`);
+			const syncParts: string[] = [sessionChip];
 			if (!gitRemote.hasRemote) {
 				syncParts.push(theme.fg("error", "\u26a0 no remote"));
 			} else if (gitRemote.ahead === 0 && gitRemote.behind === 0) {
@@ -97,40 +91,12 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 			const left3 = [gitSync, commit, statuses].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
 			const right3 = "";
 
-			// --- Line 4: Palimpsest (only when active) ---
-			let line4 = "";
-			const hasPalimpsest = palimpsest.questsTotal > 0 || palimpsest.instinctsTotal > 0;
-			if (hasPalimpsest) {
-				const plParts: string[] = [];
-
-				if (palimpsest.questsTotal > 0) {
-					const filled = Math.round((palimpsest.questsDone / palimpsest.questsTotal) * 4);
-					const bar = "\u25a0".repeat(filled) + "\u25a1".repeat(4 - filled);
-					const questColor = palimpsest.questsDone === palimpsest.questsTotal ? "success" : "accent";
-					const questStatus = `${theme.fg(questColor, bar)} ${palimpsest.questsDone}/${palimpsest.questsTotal} quests`;
-					const current = palimpsest.currentQuest ? theme.fg("muted", ` ${dotSep} ${truncateToWidth(palimpsest.currentQuest, 40, "\u2026")}`) : "";
-					plParts.push(`${vert} ${questStatus}${current}`);
-				}
-
-				const instLabel = palimpsest.instinctsTotal > 0
-					? `${palimpsest.instinctsTotal} instincts${palimpsest.instinctsProject > 0 ? ` (${palimpsest.instinctsProject} project)` : ""}`
-					: "";
-				const obsLabel = palimpsest.observations > 0 ? `${palimpsest.observations} obs` : "";
-				const metaParts = [instLabel, obsLabel].filter(Boolean).join(theme.fg("dim", ` ${dotSep} `));
-
-				const left4 = plParts.length > 0
-					? plParts[0]
-					: `${theme.fg("dim", "\ud83d\udcdc")} palimpsest`;
-				const right4 = metaParts ? theme.fg("dim", `\ud83d\udcdc ${metaParts}`) : "";
-				line4 = padBetween(left4, right4, width);
-			}
 
 			const lines = [
 				padBetween(left1, right1, width),
 				padBetween(left2, right2, width),
 				padBetween(left3, right3, width),
 			];
-			if (line4) lines.push(line4);
 			return lines.filter((l) => l.length > 0).map((line) => truncateToWidth(line, width, "\u2026"));
 		} catch (err: any) {
 			return [theme.fg("error", `pi-hud: ${err?.message ?? err}`)];
