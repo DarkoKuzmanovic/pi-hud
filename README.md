@@ -31,12 +31,11 @@ Gradient Pi ASCII art alongside a greeting, quota breakdown, session details, an
 
 ## Install
 
-```bash
-git clone https://github.com/DarkoKuzmanovic/pi-hud.git ~/.pi/agent/git/github.com/DarkoKuzmanovic/pi-hud
-ln -sfn ~/.pi/agent/git/github.com/DarkoKuzmanovic/pi-hud ~/.pi/agent/extensions/pi-hud
+```shell
+pi install git:github.com/DarkoKuzmanovic/pi-hud
 ```
 
-Then restart Pi. Pi's extension loader picks up `extensions/<name>/index.ts` automatically.
+Then restart Pi.
 
 ## Usage
 
