@@ -3,3 +3,5 @@
 AGENTS.md
 node_modules/
 .pi-lens/
+.codegraph/
+.plans/
