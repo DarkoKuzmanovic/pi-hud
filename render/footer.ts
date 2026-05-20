@@ -3,12 +3,12 @@ import { truncateToWidth } from "./format.js";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ProviderUsage, ThemeAccess } from "../types.js";
 import type { SessionTotals } from "./context.js";
-import { fmtInt, fmtDuration, compactPath, compactModelName, chip, dimChip, thinkingChip, padBetween, renderProviderUsage, costStr, statusDot, ICON_PROJECT, ICON_FOLDER, ICON_MODEL, ICON_BRANCH, isAsciiMode } from "./format.js";
+import { fmtInt, fmtDuration, compactPath, compactModelName, chip, dimChip, thinkingChip, rainbowChip, padBetween, renderProviderUsage, costStr, statusDot, ICON_PROJECT, ICON_FOLDER, ICON_MODEL, ICON_BRANCH, isAsciiMode } from "./format.js";
 import { formatContext } from "./context.js";
 import type { GitDirtyResult, GitRemoteResult, GitLastCommit } from "../git.js";
 import { getActivePalette } from "./header.js";
 
-const HIDDEN_STATUSES = new Set(["claude-oauth-ready", "claude-oauth-issue"]);
+const HIDDEN_STATUSES = new Set(["claude-oauth-ready", "claude-oauth-issue", "ultrathink"]);
 
 export interface FooterDeps {
 	ctx: ExtensionContext;
@@ -42,7 +42,8 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 				.replace(/\u00b7/g, theme.fg("dim", vert))
 				.replace(/\u2022/g, theme.fg("dim", vert));
 			const model = ctx.model ? compactModelName(ctx.model.id) : "no model";
-			const run = activeStartedAt ? `\udb81\udcef ${fmtDuration(Date.now() - activeStartedAt)}` : lastRunMs ? `\udb81\udcef ${fmtDuration(lastRunMs)}` : "\udb81\udcef idle";
+			const ultrathinkStatus = footerData.getExtensionStatuses().get("ultrathink") ?? "";
+			const run = activeStartedAt ? `\uf017 ${fmtDuration(Date.now() - activeStartedAt)}` : lastRunMs ? `\uf017 ${fmtDuration(lastRunMs)}` : "\uf017 idle";
 			const speed = lastTps ? `\u26a1 ${lastTps.toFixed(1)} tok/s` : "";
 			const cost = costStr(totals.cost);
 
@@ -55,6 +56,7 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 				gitDirty.text ? theme.fg(gitDirty.isClean ? "success" : "warning", gitDirty.text) : "",
 				dimChip(`${ICON_MODEL()} ${model}`, theme),
 				thinkingChip(thinkingLevel, theme),
+				ultrathinkStatus ? rainbowChip(ultrathinkStatus, theme) : "",
 			].filter(Boolean).join(theme.fg("dim", "  "));
 
 			const right1 = [
@@ -76,13 +78,13 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 			const sessionIdShort = sessionId ? sessionId.slice(0, 8) : "????????";
 			const sessionChip = theme.fg("muted", `\udb80\udda2 ${sessionIdShort}`);
 			const syncParts: string[] = [sessionChip];
-			if (!gitRemote.hasRemote) {
-				syncParts.push(theme.fg("error", "\u26a0 no remote"));
-			} else if (gitRemote.ahead === 0 && gitRemote.behind === 0) {
-				syncParts.push(theme.fg("success", "\u2713 synced"));
-			} else {
-				if (gitRemote.ahead > 0) syncParts.push(theme.fg("warning", `\u2191${gitRemote.ahead}`));
-				if (gitRemote.behind > 0) syncParts.push(theme.fg("error", `\u2193${gitRemote.behind}`));
+			if (gitRemote.hasRemote) {
+				if (gitRemote.ahead === 0 && gitRemote.behind === 0) {
+					syncParts.push(theme.fg("success", "\u2713 synced"));
+				} else {
+					if (gitRemote.ahead > 0) syncParts.push(theme.fg("warning", `\u2191${gitRemote.ahead}`));
+					if (gitRemote.behind > 0) syncParts.push(theme.fg("error", `\u2193${gitRemote.behind}`));
+				}
 			}
 			const gitSync = syncParts.join(" ");
 			const commit = gitLastCommit.hash

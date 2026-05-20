@@ -84,8 +84,53 @@ function timeGreeting(): string {
 	return "Late night session \ud83c\udf19";
 }
 
-// --- Resource counts ---
+// --- Hints ---
 
+const HINTS = [
+	`Try /enhance <prompt> — rewrite through a stronger model (Opus) before sending to your session model`,
+	`Run /loop tests to keep running tests until they pass; use /loop custom "<cond>" for any loop`,
+	`Use /memory to list or search past session memories saved to Obsidian Dev/Memories/`,
+	`Switch HUD theme: /hud theme ocean | sunset | aurora | inferno | electric | random`,
+	`Open /todos to see all pending, in-progress, and completed tasks`,
+	`Delegate with /run <agent> <task>; add --bg for background or --fork for fresh context`,
+	`Chain agents: /chain scout "explore" -> planner "design" -> coder "implement"`,
+	`Fan out with /parallel: reviewer "check auth" -> tester "verify" [--bg]`,
+	`Pass full session to the enhancer: /enhance --context=full <prompt>`,
+	`Press Ctrl+\` to open gitui as a Kitty overlay for interactive git ops`,
+	`Benchmark model speed with /speedtest — TPS, TTFT, and latency`,
+	`Generate a session recap with /recap — progress, blockers, and next steps`,
+	`Inject text mid-turn with /steer <text> (sends normally if agent is idle)`,
+	`See context usage breakdown with /context — tokens and window fill`,
+	`Pick a compaction model with /compact-model for better summary quality`,
+	`Prefix with ! to run bash commands directly from the input editor`,
+	`Press Ctrl+P to switch models mid-session without losing conversation`,
+	`Manage system prompt snippets: /sys-prompt to add, view, or delete them`,
+	`Tag your session with /color red|blue|green|yellow for tree identification`,
+	`Use /run --fork to spawn a subagent with zero session context for objective review`,
+	`Press Esc any time to interrupt the agent mid-turn and regain control`,
+	`Check active coaching prompts: /cogni shows what's injected for the current model`,
+	`Use obsidian_retrieve / obsidian_write to query and update Obsidian vault directly`,
+	`Call subagent { action: "list" } to see all registered agents and chains`,
+	`Build deep code context with codegraph_context — entry points, related symbols, and key code`,
+];
+let hintIndex = 0;
+let cachedHint = "";
+let hintChangedAt = 0;
+export function nextHint(): string {
+	const now = Date.now();
+	// Cache hint for 5s to avoid rapid cycling on terminal resize
+	if (cachedHint && now - hintChangedAt < 5000) return cachedHint;
+	const hint = HINTS[hintIndex % HINTS.length];
+	hintIndex++;
+	cachedHint = hint;
+	hintChangedAt = now;
+	return hint;
+}
+export function resetHintCycle(): void {
+	hintIndex = 0;
+	cachedHint = "";
+}
+// --- Resource counts ---
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -166,11 +211,16 @@ export function renderHeader(deps: HeaderDeps, theme: ThemeAccess): (width: numb
 			const projectName = basename(ctx.cwd) || "~";
 			const cwdShort = compactPath(ctx.cwd);
 
+			const quotaLine = activeUsage.status === "ok"
+				? activeUsage.windows.map((w) => quotaChip(w, theme)).join("  ")
+				: theme.fg("dim", `${activeUsage.icon}  ${activeUsage.name}: ${activeUsage.message ?? activeUsage.status}`);
+
 			const right = [
 				`${theme.fg("dim", `pi v${VERSION}`)}${dot}${theme.fg("accent", timeGreeting())}`,
-				`${theme.fg("muted", modelShort)}${thinkingLevel !== "off" ? `${dot}${theme.fg("dim", `\u25c7 ${thinkingLevel}`)}` : ""}`,
+				`${theme.fg("muted", modelShort)}${thinkingLevel !== "off" ? `${dot}${theme.fg("dim", `\uf0eb ${thinkingLevel}`)}` : ""}`,
 				`${theme.fg("muted", projectName)}${dot}${theme.fg("dim", cwdShort)}`,
-				theme.fg("muted", "/ cmds \u00b7 ! bash \u00b7 Ctrl+O more \u00b7 Esc interrupt \u00b7 Ctrl+P models"),
+				"",
+				quotaLine,
 			];
 
 			const lines: string[] = [];
@@ -183,12 +233,11 @@ export function renderHeader(deps: HeaderDeps, theme: ThemeAccess): (width: numb
 			}
 
 			lines.push("");
-			const quotaLine = activeUsage.status === "ok"
-				? activeUsage.windows.map((w) => quotaChip(w, theme)).join("  ")
-				: theme.fg("dim", `${activeUsage.icon} ${activeUsage.name}: ${activeUsage.message ?? activeUsage.status}`);
-			lines.push(quotaLine);
+			const divider = theme.fg("dim", "\u2500".repeat(width));
+			lines.push(divider);
+			lines.push(`  ${theme.fg("accent", nextHint())}`);
+			lines.push(divider);
 
-			lines.push("");
 			const { skills: skillN, mcps: mcpN, extensions: extN } = getResourceCounts(ctx.cwd);
 			const resourcesLine = [
 				`${theme.fg("muted", String(skillN))} ${theme.fg("dim", "skills")}`,

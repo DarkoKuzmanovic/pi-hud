@@ -78,10 +78,10 @@ export const SEP_R = () => (asciiMode ? "]" : "\ue0b4");
 
 // Icon fallbacks: Nerd Font PUA codepoints → readable alternatives
 export const ICON_PROJECT = () => (asciiMode ? "\u03c0" : "\ue22c"); // π vs Nerd Font pi
-export const ICON_FOLDER = () => (asciiMode ? "\ud83d\udcc1" : "\udb80\udc5c"); // 📁 vs Nerd Font folder
+export const ICON_FOLDER = () => (asciiMode ? "📁" : ""); // 📁 vs nf-cod-folder_opened
 export const ICON_MODEL = () => (asciiMode ? "\ud83e\udd16" : "\udb80\ude29"); // 🤖 vs Nerd Font robot
-export const ICON_BRANCH = () => (asciiMode ? "\u2387" : "\udb80\udc65"); // ⎇ vs Nerd Font git-branch
-export const ICON_CTX = () => (asciiMode ? "\u229e" : "\udb80\udd1c"); // ⊞ vs Nerd Font context
+export const ICON_BRANCH = () => (asciiMode ? "⎇" : ""); // ⎇ vs nf-fa-code_fork
+export const ICON_CTX = () => (asciiMode ? "⊞" : ""); // ⊞ vs nf-cod-pie_chart
 // --- Chip renderers ---
 
 export function chip(text: string, theme: ThemeAccess): string {
@@ -124,7 +124,26 @@ export function thinkingChip(level: string, theme: ThemeAccess): string {
 						: level === "minimal"
 							? "thinkingMinimal"
 							: "muted";
-	return `${theme.fg(color, SEP_L())}${theme.fg(color, theme.inverse(` \u25c7 ${level} `))}${theme.fg(color, SEP_R())}`;
+	return `${theme.fg(color, SEP_L())}${theme.fg(color, theme.inverse(` \uf0eb ${level} `))}${theme.fg(color, SEP_R())}`;
+}
+
+// Rainbow chip — 8-color ANSI 256 palette (red→orange→yellow→lime→cyan→sky→violet→pink)
+// Matches the gradient the shitty-pi ultrathink extension uses, but rendered statically
+// (no animation) so the wallclock-conscious render path stays clean.
+const RAINBOW_PALETTE = [196, 208, 226, 118, 51, 39, 171, 213];
+
+export function rainbowChip(text: string, theme: ThemeAccess): string {
+	void theme; // colors hardcoded for rainbow effect; theme not needed
+	const chars = [...` ${text} `];
+	if (chars.length === 0) return "";
+	const firstColor = RAINBOW_PALETTE[0];
+	const lastColor = RAINBOW_PALETTE[(chars.length - 1) % RAINBOW_PALETTE.length];
+	let body = "";
+	for (let i = 0; i < chars.length; i++) {
+		const c = RAINBOW_PALETTE[i % RAINBOW_PALETTE.length];
+		body += `\x1b[48;5;${c}m\x1b[1;38;5;231m${chars[i]}\x1b[0m`;
+	}
+	return `\x1b[38;5;${firstColor}m${SEP_L()}\x1b[39m${body}\x1b[38;5;${lastColor}m${SEP_R()}\x1b[39m`;
 }
 // --- Cost + status helpers ---
 
@@ -187,8 +206,8 @@ export function renderProviderUsage(
 	palette?: [number, number, number][],
 ): string {
 	const providerChip = palette
-		? paletteChip(`${provider.icon} ${provider.name}`, palette[0], theme)
-		: chip(`${provider.icon} ${provider.name}`, theme);
+	? paletteChip(`${provider.icon}  ${provider.name}`, palette[0], theme)
+	: chip(`${provider.icon}  ${provider.name}`, theme);
 	const windows = provider.windows
 		.map((w) => renderWindow(w, theme))
 		.join(theme.fg("dim", "  "));

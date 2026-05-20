@@ -70,7 +70,7 @@ export default function piHud(pi: ExtensionAPI) {
 	let codexUsage: ProviderUsage = {
 		id: "codex",
 		name: "Codex",
-		icon: "\udb80\ude29",
+		icon: "\uee0d",
 		status: "unknown",
 		message: "loading",
 		windows: [{ label: "5h" }, { label: "week" }],
@@ -78,7 +78,7 @@ export default function piHud(pi: ExtensionAPI) {
 	let anthropicUsage: ProviderUsage = {
 		id: "anthropic",
 		name: "Claude",
-		icon: "\udb80\udc8b",
+		icon: "\uee0d",
 		status: "unknown",
 		message: "loading",
 		windows: [{ label: "5h" }, { label: "week" }],
@@ -86,7 +86,7 @@ export default function piHud(pi: ExtensionAPI) {
 	let ollamaUsage: ProviderUsage = {
 		id: "ollama-cloud",
 		name: "Ollama",
-		icon: "\ud83e\udd99",
+		icon: "\uee0d",
 		status: "unknown",
 		message: "loading",
 		windows: [{ label: "5h" }, { label: "week" }],
@@ -94,7 +94,7 @@ export default function piHud(pi: ExtensionAPI) {
 	let waferUsage: ProviderUsage = {
 		id: "wafer",
 		name: "Wafer",
-		icon: "\ud83c\udf5e",
+		icon: "\uee0d",
 		status: "unknown",
 		message: "loading",
 		windows: [{ label: "5h" }],
@@ -102,7 +102,7 @@ export default function piHud(pi: ExtensionAPI) {
 	let crofaiUsage: ProviderUsage = {
 		id: "crofai",
 		name: "CrofAI",
-		icon: "🥖",
+		icon: "\uee0d",
 		status: "unknown",
 		message: "loading",
 		windows: [{ label: "daily" }],
@@ -110,7 +110,7 @@ export default function piHud(pi: ExtensionAPI) {
 	let opencodeUsage: ProviderUsage = {
 		id: "opencode",
 		name: "OpenCode",
-		icon: "\u{1F7E2}",
+		icon: "\uee0d",
 		status: "unknown",
 		message: "loading",
 		windows: [{ label: "5h" }, { label: "week" }, { label: "month" }],
@@ -150,6 +150,17 @@ export default function piHud(pi: ExtensionAPI) {
 		if (isOpenCodeProvider(provider)) return opencodeUsage;
 		if (isCrofaiProvider(provider)) return crofaiUsage;
 		return codexUsage;
+	};
+
+	// Stable hash for change detection: every provider stamps `updatedAt: Date.now()`
+	// on every refresh regardless of whether the underlying usage values changed.
+	// Including it in the JSON comparison made the "did data change?" check always
+	// true, causing pi-hud to call tui.requestRender() on every quota tick — which
+	// snaps the user's terminal scrollback back to the bottom. Compare on the
+	// user-visible subset only.
+	const stableUsageKey = (u: ProviderUsage): string => {
+		const { updatedAt: _updatedAt, ...rest } = u;
+		return JSON.stringify(rest);
 	};
 
 	// --- Provider refresh (in-flight dedup) ---
@@ -284,9 +295,9 @@ export default function piHud(pi: ExtensionAPI) {
 					: QUOTA_REFRESH_MS;
 				const needsQuotaRefresh = Date.now() - (activeUsage.updatedAt ?? 0) > quotaRefresh;
 				if (needsQuotaRefresh) {
-					const prevUsage = JSON.stringify(activeUsage);
+					const prevUsage = stableUsageKey(activeUsage);
 					void refreshActiveProvider(ctx).then(() => {
-						const newUsage = JSON.stringify(getActiveUsage(ctx));
+						const newUsage = stableUsageKey(getActiveUsage(ctx));
 						if (newUsage !== prevUsage) {
 							tui.requestRender();
 						}
@@ -366,31 +377,107 @@ export default function piHud(pi: ExtensionAPI) {
 			/* Session totals sync best-effort */
 		}
 
-		if (typeof process !== "undefined" && !process.env?.KITTY_WINDOW_ID) {
-			ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
+		ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
 				const fullTheme = ctx.ui.theme;
 				const editor = new (class extends CustomEditor {
 					render(width: number): string[] {
-						const lines = super.render(width);
+						const markerWidth = 3; // Fixed column: "▌  " or "↑3 " or "↓12 "
+						const innerWidth = Math.max(1, width - markerWidth);
+
+						// Render at innerWidth so text wraps correctly for the narrower column
+						const lines = super.render(innerWidth);
 						if (lines.length < 2) return lines;
-						const content = lines.slice(1, -1);
-						if (content.length === 0) return lines;
-						const bgOpen = fullTheme.getBgAnsi("selectedBg");
+
+						const bgOpen = fullTheme.getBgAnsi("toolSuccessBg");
 						const bgClose = "\x1b[49m";
-						const blankBar = `${bgOpen}${" ".repeat(width)}${bgClose}`;
-						const rendered = content.map((line) => {
+						const markerRaw = "\u258C"; // ▌ LEFT HALF BLOCK
+
+						// Detect scroll indicators from the original border lines.
+						// Top border (lines[0]): when scrolled up contains "↑ N more"
+						// Bottom border (lines[last]): when scrolled down contains "↓ N more"
+						// Autocomplete lines appear after the bottom border — preserve them.
+						const topBorder = lines[0] ?? "";
+						const scrollUpMatch = topBorder.match(/↑ (\d+) more/);
+
+						// Find the bottom border: it's the last line that starts with border chars
+						// or contains the scroll-down indicator.
+						// Autocomplete lines come after it.
+						let bottomBorderIdx = -1;
+						for (let i = lines.length - 1; i >= 1; i--) {
+							const stripped = lines[i].replace(/\x1b\[[0-9;]*m/g, "").trim();
+							if (stripped.startsWith("─") || /↓ \d+ more/.test(stripped)) {
+								bottomBorderIdx = i;
+								break;
+							}
+						}
+
+						const scrollDownMatch = bottomBorderIdx >= 0
+							? lines[bottomBorderIdx].match(/↓ (\d+) more/)
+							: null;
+
+						// Extract content lines (between borders) and autocomplete lines (after bottom border)
+						const content = bottomBorderIdx >= 0
+							? lines.slice(1, bottomBorderIdx)
+							: lines.slice(1, -1);
+						const autocompleteLines = bottomBorderIdx >= 0 && bottomBorderIdx < lines.length - 1
+							? lines.slice(bottomBorderIdx + 1)
+							: [];
+
+						// Build the marker column: ▌ in borderColor (thinking level / bash mode),
+						// or scroll indicator replaces ▌ on that line. Padded to markerWidth.
+						const makeMarker = (indicator?: string): string => {
+							const glyph = indicator ?? markerRaw;
+							// Only apply fg color — bg is set at the line level via bgOpen.
+							// Using theme.bg here would emit \x1b[49m and break the line's background.
+							const styled = this.borderColor(glyph);
+							const styledVisible = indicator ? indicator.length : 1;
+							const pad = " ".repeat(Math.max(0, markerWidth - styledVisible));
+							return `${styled}${pad}`;
+						};
+
+						const rendered: string[] = [];
+
+						// Top blank line with ▌ (or scroll-up indicator)
+						const topMarker = scrollUpMatch
+							? makeMarker(`↑${scrollUpMatch[1]}`)
+							: makeMarker();
+						rendered.push(`${bgOpen}${topMarker}${bgOpen}${" ".repeat(Math.max(0, innerWidth))}${bgClose}`);
+
+						// Content lines: ▌ + bg-colored text
+						for (const line of content) {
+							// Re-anchor background after any \x1b[0m resets inside the line
+							// (cursor highlight, color codes, etc.)
 							const repaired = line.replace(/\x1b\[0m/g, `\x1b[0m${bgOpen}`);
 							const w = visibleWidth(line);
-							const padded =
-								w < width ? repaired + " ".repeat(width - w) : repaired;
-							return `${bgOpen}${padded}${bgClose}`;
-						});
-						return [blankBar, ...rendered, blankBar, ""];
+							const padded = w < innerWidth
+								? repaired + " ".repeat(innerWidth - w)
+								: repaired;
+							rendered.push(`${bgOpen}${makeMarker()}${bgOpen}${padded}${bgClose}`);
+						}
+
+						// Bottom blank line with ▌ (or scroll-down indicator)
+						const bottomMarker = scrollDownMatch
+							? makeMarker(`↓${scrollDownMatch[1]}`)
+							: makeMarker();
+						rendered.push(`${bgOpen}${bottomMarker}${bgOpen}${" ".repeat(innerWidth)}${bgClose}`);
+
+						// Autocomplete lines: rendered at innerWidth by parent, pad to full width
+						for (const acLine of autocompleteLines) {
+							const w = visibleWidth(acLine);
+							const pad = w < width
+								? " ".repeat(width - w)
+								: "";
+							rendered.push(acLine + pad);
+						}
+
+						// Trailing empty line for spacing
+						rendered.push("");
+
+						return rendered;
 					}
 				})(tui, editorTheme, keybindings);
 				return editor;
 			});
-		}
 
 		ctx.ui.setHeader((_tui, theme) => ({
 			render(width: number): string[] {

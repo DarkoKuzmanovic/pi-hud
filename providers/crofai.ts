@@ -3,10 +3,10 @@ import type { CrofAIFetchResult, ProviderUsage } from "../types.js";
 
 const QUOTA_URL = "https://crof.ai/usage_api/";
 
-// Hardcoded daily reset time — 17:10 UTC (= 19:10 CEST / Europe/Belgrade).
-// Adjust if your account resets at a different time.
-const RESET_HOUR_UTC = 17;
-const RESET_MIN_UTC = 10;
+// Daily reset time — 05:00 UTC (= 07:00 CEST / Europe/Belgrade).
+// Confirmed via actual API timing offset from 17:10 UTC.
+const RESET_HOUR_UTC = 5;
+const RESET_MIN_UTC = 0;
 
 interface QuotaResponse {
 	credits?: number;
@@ -74,21 +74,28 @@ export async function fetchCrofaiUsage(): Promise<CrofAIFetchResult> {
 	};
 }
 
-export function crofaiToProvider(
-	result: CrofAIFetchResult,
-	previous?: ProviderUsage,
-): ProviderUsage {
-	if (result.status !== "ok") {
-		return {
-			id: "crofai",
-			name: "CrofAI",
-			icon: "🥖",
-			status: result.status,
-			message: result.message,
-			updatedAt: Date.now(),
-			windows: previous?.windows ?? [{ label: "daily" }],
-		};
-	}
+	export function crofaiToProvider(
+		result: CrofAIFetchResult,
+		previous?: ProviderUsage,
+	): ProviderUsage {
+		if (result.status !== "ok") {
+			return {
+				id: "crofai",
+				name: "CrofAI",
+				icon: "🥖",
+				status: result.status,
+				message: result.message,
+				updatedAt: Date.now(),
+				windows: previous?.windows
+					? [
+							{
+								...previous.windows[0],
+								resetAt: nextResetAt(),
+							},
+						]
+					: [{ label: "daily" }],
+			};
+		}
 
 	const credits = result.usage?.credits;
 	const creditsText =
