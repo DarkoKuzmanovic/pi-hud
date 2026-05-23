@@ -79,6 +79,8 @@ export interface AnthropicFetchResult {
 	usage: AnthropicUsageResponse | null;
 	status: ProviderStatus;
 	message?: string;
+	/** Timestamp the underlying data was originally fetched at — only set when result comes from disk cache. */
+	fetchedAt?: number;
 }
 
 export interface OllamaUsageData {

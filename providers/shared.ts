@@ -87,9 +87,22 @@ export class FetchError extends Error {
 			| "http-error",
 		message: string,
 		public readonly statusCode?: number,
+		/** Milliseconds until the caller may safely retry, parsed from Retry-After when present. */
+		public readonly retryAfterMs?: number,
 	) {
 		super(message);
 	}
+}
+
+function parseRetryAfterMs(headerValue: string | null): number | undefined {
+	if (!headerValue) return undefined;
+	const trimmed = headerValue.trim();
+	if (!trimmed) return undefined;
+	const seconds = Number.parseInt(trimmed, 10);
+	if (Number.isFinite(seconds) && seconds > 0) return seconds * 1000;
+	const dateMs = Date.parse(trimmed);
+	if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+	return undefined;
 }
 
 /**
@@ -130,7 +143,8 @@ export async function fetchWithAuth(opts: FetchOptions): Promise<FetchResult> {
 			throw new FetchError("auth-needed", "expired", statusCode);
 		}
 		if (statusCode < 200 || statusCode >= 300) {
-			throw new FetchError("http-error", `http ${statusCode}`, statusCode);
+			const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+			throw new FetchError("http-error", `http ${statusCode}`, statusCode, retryAfterMs);
 		}
 
 		// Stream the body with a size limit

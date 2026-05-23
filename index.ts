@@ -13,6 +13,7 @@ import { fetchCodexUsage, codexToProvider } from "./providers/codex.js";
 import {
 	fetchAnthropicUsage,
 	anthropicToProvider,
+	loadCachedAnthropicUsage,
 } from "./providers/anthropic.js";
 import {
 	fetchOllamaUsage,
@@ -358,6 +359,11 @@ export default function piHud(pi: ExtensionAPI) {
 	};
 
 	pi.on("session_start", (_event, ctx) => {
+		// Seed Anthropic usage from disk before kicking off any refresh so the footer
+		// shows last-known-good values immediately, even when a 429 prevents a fresh fetch.
+		const cached = loadCachedAnthropicUsage();
+		if (cached) anthropicUsage = anthropicToProvider(cached, anthropicUsage);
+
 		install(ctx);
 
 		// Resync session totals from existing branch on start/resume/fork
