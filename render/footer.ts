@@ -21,6 +21,8 @@ export interface FooterDeps {
 	gitDirty: GitDirtyResult;
 	gitRemote: GitRemoteResult;
 	gitLastCommit: GitLastCommit;
+	hintMode: "cycle" | "once" | "off";
+	firstUserMessageSeen: boolean;
 }
 export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: any): (width: number) => string[] {
 	return (width: number) => {
@@ -93,16 +95,22 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 			const left3 = [gitSync, commit, statuses].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
 			const right3 = "";
 
-			// --- Line 4: cycling hint (moved here from header to avoid kitty scrollback wipe).
-			// Footer is below the conversation viewport, so above-viewport diff never fires.
-			const hint = nextHint();
-			const hintLine = `  ${theme.fg("accent", hint)}`;
+			// --- Line 4: hint (moved here from header to avoid kitty scrollback wipe).
+			// Footer is below the conversation viewport, so per-tick changes never fire
+			// the above-viewport diff path.
+			//   cycle = rotate every 5s (HINTS array, via nextHint cache TTL)
+			//   once  = show until first user message of session, then omit
+			//   off   = never show
+			const showHint =
+				deps.hintMode === "cycle" ||
+				(deps.hintMode === "once" && !deps.firstUserMessageSeen);
+			const hintLine = showHint ? `  ${theme.fg("accent", nextHint())}` : null;
 
 			const lines = [
 				padBetween(left1, right1, width),
 				padBetween(left2, right2, width),
 				padBetween(left3, right3, width),
-				hintLine,
+				...(hintLine !== null ? [hintLine] : []),
 			];
 			return lines.filter((l) => l.length > 0).map((line) => truncateToWidth(line, width, "\u2026"));
 		} catch (err: any) {

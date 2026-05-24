@@ -67,6 +67,16 @@ export default function piHud(pi: ExtensionAPI) {
 	let lastTps: number | null = null;
 	let lastAssistantStart: number | null = null;
 
+	// Hint mode — controls footer line 4 (cycling hint).
+	//   cycle = rotate every 5s (HINTS array, via nextHint cache TTL)
+	//   once  = show until first user message of session, then omit
+	//   off   = never show
+	// Default "once" matches the design goal: hint visible briefly at session
+	// start (welcome / feature discovery), then out of the way for the rest
+	// of the session. Change with /hud hint cycle|once|off.
+	let hintMode: "cycle" | "once" | "off" = "once";
+	let firstUserMessageSeen = false;
+
 	// Provider usage state
 	let codexUsage: ProviderUsage = {
 		id: "codex",
@@ -346,6 +356,8 @@ export default function piHud(pi: ExtensionAPI) {
 								gitDirty: cachedGitDirty,
 								gitRemote: cachedGitRemote,
 								gitLastCommit: cachedGitLastCommit,
+								hintMode,
+								firstUserMessageSeen,
 							},
 							theme,
 							footerData,
@@ -524,6 +536,12 @@ export default function piHud(pi: ExtensionAPI) {
 
 	pi.on("message_start", (event) => {
 		if (event.message.role === "assistant") lastAssistantStart = Date.now();
+		// First user message of the session: flip the flag and trigger one re-render
+		// so the hint disappears from the footer (when hintMode === "once").
+		if (event.message.role === "user" && !firstUserMessageSeen) {
+			firstUserMessageSeen = true;
+			if (hintMode === "once") footerTui?.requestRender();
+		}
 	});
 
 	pi.on("message_end", (event) => {
@@ -549,6 +567,8 @@ export default function piHud(pi: ExtensionAPI) {
 		installedCtx = null;
 		// Reset cached totals for new session
 		totals = initSessionTotals();
+		// Reset first-message tracking for the next session
+		firstUserMessageSeen = false;
 	});
 
 	// Ctrl+` opens gitui as a Kitty overlay
@@ -581,7 +601,7 @@ export default function piHud(pi: ExtensionAPI) {
 
 	pi.registerCommand("hud", {
 		description:
-			"Manage the HUD: /hud on|off|refresh|status|theme [name]|ascii",
+			"Manage the HUD: /hud on|off|refresh|status|theme [name]|ascii|hint [cycle|once|off]",
 		handler: async (args, ctx) => {
 			const arg = (args ?? "").trim().toLowerCase();
 
@@ -641,6 +661,29 @@ export default function piHud(pi: ExtensionAPI) {
 				setAsciiMode(!current);
 				ctx.ui.notify(`HUD ASCII mode: ${!current ? "ON" : "OFF"}`, "success");
 				if (installedCtx) install(installedCtx);
+				return;
+			}
+
+			// --- hint mode ---
+			if (arg.startsWith("hint")) {
+				const mode = arg.slice(4).trim();
+				if (!mode) {
+					ctx.ui.notify(
+						`HUD hint mode: ${hintMode} (cycle | once | off)`,
+						"info",
+					);
+					return;
+				}
+				if (mode !== "cycle" && mode !== "once" && mode !== "off") {
+					ctx.ui.notify(
+						`Unknown hint mode "${mode}". Use: cycle | once | off`,
+						"error",
+					);
+					return;
+				}
+				hintMode = mode;
+				footerTui?.requestRender();
+				ctx.ui.notify(`HUD hint mode: ${mode}`, "success");
 				return;
 			}
 
