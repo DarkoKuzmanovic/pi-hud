@@ -6,7 +6,7 @@ import type { SessionTotals } from "./context.js";
 import { fmtInt, fmtDuration, compactPath, compactModelName, chip, dimChip, thinkingChip, rainbowChip, padBetween, renderProviderUsage, costStr, statusDot, ICON_PROJECT, ICON_FOLDER, ICON_MODEL, ICON_BRANCH, isAsciiMode } from "./format.js";
 import { formatContext } from "./context.js";
 import type { GitDirtyResult, GitRemoteResult, GitLastCommit } from "../git.js";
-import { getActivePalette } from "./header.js";
+import { getActivePalette, nextHint } from "./header.js";
 
 const HIDDEN_STATUSES = new Set(["claude-oauth-ready", "claude-oauth-issue", "ultrathink"]);
 
@@ -93,11 +93,16 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 			const left3 = [gitSync, commit, statuses].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
 			const right3 = "";
 
+			// --- Line 4: cycling hint (moved here from header to avoid kitty scrollback wipe).
+			// Footer is below the conversation viewport, so above-viewport diff never fires.
+			const hint = nextHint();
+			const hintLine = `  ${theme.fg("accent", hint)}`;
 
 			const lines = [
 				padBetween(left1, right1, width),
 				padBetween(left2, right2, width),
 				padBetween(left3, right3, width),
+				hintLine,
 			];
 			return lines.filter((l) => l.length > 0).map((line) => truncateToWidth(line, width, "\u2026"));
 		} catch (err: any) {

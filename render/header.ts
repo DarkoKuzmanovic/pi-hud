@@ -135,7 +135,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-const RESOURCE_CACHE_TTL_MS = 30_000;
+const RESOURCE_CACHE_TTL_MS = Number.POSITIVE_INFINITY; // Frozen: skills/mcps/extensions don't change mid-session in practice. Anything else triggers above-viewport re-render → kitty scrollback wipe.
 let resourceCache: { at: number; cwd: string; skills: number; mcps: number; extensions: number } | null = null;
 
 function countDirEntries(dir: string, predicate: (name: string, isDir: boolean) => boolean): number {
@@ -211,17 +211,14 @@ export function renderHeader(deps: HeaderDeps, theme: ThemeAccess): (width: numb
 			const projectName = basename(ctx.cwd) || "~";
 			const cwdShort = compactPath(ctx.cwd);
 
-			const quotaLine = activeUsage.status === "ok"
-				? activeUsage.windows.map((w) => quotaChip(w, theme)).join("  ")
-				: theme.fg("dim", `${activeUsage.icon}  ${activeUsage.name}: ${activeUsage.message ?? activeUsage.status}`);
-
 			const right = [
 				`${theme.fg("dim", `pi v${VERSION}`)}${dot}${theme.fg("accent", timeGreeting())}`,
 				`${theme.fg("muted", modelShort)}${thinkingLevel !== "off" ? `${dot}${theme.fg("dim", `\uf0eb ${thinkingLevel}`)}` : ""}`,
 				`${theme.fg("muted", projectName)}${dot}${theme.fg("dim", cwdShort)}`,
-				"",
-				quotaLine,
 			];
+			// NOTE: quotaLine removed from header — already shown in footer line 2 right (renderProviderUsage).
+			// Any per-minute change above the viewport triggers pi-tui's fullRender(clear) which wipes
+			// kitty scrollback. Keep header content byte-stable across renders.
 
 			const lines: string[] = [];
 			lines.push("");
@@ -235,8 +232,8 @@ export function renderHeader(deps: HeaderDeps, theme: ThemeAccess): (width: numb
 			lines.push("");
 			const divider = theme.fg("dim", "\u2500".repeat(width));
 			lines.push(divider);
-			lines.push(`  ${theme.fg("accent", nextHint())}`);
-			lines.push(divider);
+			// NOTE: cycling hint moved to footer. nextHint() in the header changed every 5s above the
+			// viewport which triggered fullRender(clear) in pi-tui → kitty scrollback wipe → scroll yank.
 
 			const { skills: skillN, mcps: mcpN, extensions: extN } = getResourceCounts(ctx.cwd);
 			const resourcesLine = [
