@@ -84,7 +84,7 @@ export function waferToProvider(
 		return {
 			id: "wafer",
 			name: "Wafer",
-			icon: "🍞",
+			icon: "\uee0d",
 			status: result.status,
 			message: result.message,
 			updatedAt: Date.now(),
@@ -94,7 +94,7 @@ export function waferToProvider(
 	return {
 		id: "wafer",
 		name: "Wafer",
-		icon: "🍞",
+		icon: "\uee0d",
 		status: "ok",
 		updatedAt: Date.now(),
 		windows: [

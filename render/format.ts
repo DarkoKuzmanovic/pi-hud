@@ -82,6 +82,13 @@ export const ICON_FOLDER = () => (asciiMode ? "📁" : ""); // 📁 vs nf-cod
 export const ICON_MODEL = () => (asciiMode ? "\ud83e\udd16" : "\udb80\ude29"); // 🤖 vs Nerd Font robot
 export const ICON_BRANCH = () => (asciiMode ? "⎇" : ""); // ⎇ vs nf-fa-code_fork
 export const ICON_CTX = () => (asciiMode ? "⊞" : ""); // ⊞ vs nf-cod-pie_chart
+export const ICON_CWD = () => (asciiMode ? "📁" : "\ue5ff"); // 📁 vs nf-cod-root_folder (distinct from ICON_FOLDER)
+// Alternative ICON_CWD candidates — swap the PUA codepoint to try:
+//   \uf07b  nf-fa-folder_open        — classic open folder (FontAwesome)
+//   \ue5ff  nf-cod-root_folder       — root/anchor folder (Codex)
+//   \uf413  nf-md-folder              — Material folder
+//   \uf414  nf-md-folder_outline      — Material folder outline
+//   \uf430  nf-md-folder_anchor       — Material pinned folder
 // --- Chip renderers ---
 
 export function chip(text: string, theme: ThemeAccess): string {
