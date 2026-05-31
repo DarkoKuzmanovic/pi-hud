@@ -27,6 +27,7 @@
     "types.ts",
     "git.ts",
     "cookies.ts",
+    "token-speed.ts",
     "render/**/*.ts",
     "render/**/*.js",
     "providers/**/*.ts",
@@ -35,6 +36,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "test": "node --test",
     "typecheck": "tsc --noEmit"
   },
   "pi": {

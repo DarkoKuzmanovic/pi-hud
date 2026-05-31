@@ -4,6 +4,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "./render/format.js";
+import { TokenSpeedTracker } from "./token-speed.js";
 
 // Types
 import type { ProviderUsage } from "./types.js";
@@ -49,6 +50,7 @@ import { setAsciiMode, isAsciiMode } from "./render/format.js";
 const QUOTA_REFRESH_MS = 60_000;
 const WAFER_QUOTA_REFRESH_MS = 60_000;
 const GIT_REFRESH_MS = 5_000;
+const TPS_RENDER_THROTTLE_MS = 250;
 
 // --- Provider helpers ---
 const isOllamaProvider = (provider?: string): boolean =>
@@ -66,6 +68,8 @@ export default function piHud(pi: ExtensionAPI) {
 	let lastRunMs: number | null = null;
 	let lastTps: number | null = null;
 	let lastAssistantStart: number | null = null;
+	const tokenSpeed = new TokenSpeedTracker();
+	let lastTpsRenderAt = 0;
 
 	// Hint mode — controls footer line 4 (cycling hint).
 	//   cycle = rotate every 5s (HINTS array, via nextHint cache TTL)
@@ -172,6 +176,12 @@ export default function piHud(pi: ExtensionAPI) {
 	const stableUsageKey = (u: ProviderUsage): string => {
 		const { updatedAt: _updatedAt, ...rest } = u;
 		return JSON.stringify(rest);
+	};
+
+	const requestTpsRender = (now = Date.now()): void => {
+		if (now - lastTpsRenderAt < TPS_RENDER_THROTTLE_MS) return;
+		lastTpsRenderAt = now;
+		footerTui?.requestRender();
 	};
 
 	// --- Provider refresh (in-flight dedup) ---
@@ -535,7 +545,13 @@ export default function piHud(pi: ExtensionAPI) {
 	});
 
 	pi.on("message_start", (event) => {
-		if (event.message.role === "assistant") lastAssistantStart = Date.now();
+		if (event.message.role === "assistant") {
+			lastAssistantStart = Date.now();
+			lastTps = null;
+			lastTpsRenderAt = 0;
+			tokenSpeed.start(lastAssistantStart);
+			footerTui?.requestRender();
+		}
 		// First user message of the session: flip the flag and trigger one re-render
 		// so the hint disappears from the footer (when hintMode === "once").
 		if (event.message.role === "user" && !firstUserMessageSeen) {
@@ -544,18 +560,40 @@ export default function piHud(pi: ExtensionAPI) {
 		}
 	});
 
+	pi.on("message_update", (event) => {
+		const update = event.assistantMessageEvent;
+		if (update.type !== "text_delta" && update.type !== "thinking_delta") return;
+		tokenSpeed.recordToken();
+		lastTps = tokenSpeed.snapshot().tps;
+		requestTpsRender();
+	});
+
 	pi.on("message_end", (event) => {
 		// Incremental totals accumulation (O(1) instead of O(n) per render)
 		accumulateMessage(event.message, totals);
 
-		if (event.message.role !== "assistant" || !lastAssistantStart) return;
-		const usage = (event.message as any).usage;
-		const elapsed = Math.max((Date.now() - lastAssistantStart) / 1000, 0.001);
-		lastTps = usage?.output ? usage.output / elapsed : lastTps;
+		if (event.message.role !== "assistant") return;
+		const now = Date.now();
+		const snapshot = tokenSpeed.stop(now);
+		const usage = (event.message as { usage?: { output?: number } }).usage;
+		const elapsed = lastAssistantStart
+			? Math.max((now - lastAssistantStart) / 1000, 0.001)
+			: 0;
+		lastTps = usage?.output && elapsed > 0
+			? usage.output / elapsed
+			: snapshot.tokenCount > 0
+				? snapshot.averageTps
+				: lastTps;
 		lastAssistantStart = null;
 		footerTui?.requestRender();
 	});
 
+	pi.on("turn_end", () => {
+		if (!tokenSpeed.isStreaming) return;
+		lastTps = tokenSpeed.stop().averageTps;
+		lastAssistantStart = null;
+		footerTui?.requestRender();
+	});
 	pi.on("session_shutdown", (_event, ctx) => {
 		ctx.ui.setFooter(undefined);
 		ctx.ui.setHeader(undefined);
@@ -569,6 +607,10 @@ export default function piHud(pi: ExtensionAPI) {
 		totals = initSessionTotals();
 		// Reset first-message tracking for the next session
 		firstUserMessageSeen = false;
+		lastTps = null;
+		lastAssistantStart = null;
+		lastTpsRenderAt = 0;
+		if (tokenSpeed.isStreaming) tokenSpeed.stop();
 	});
 
 	// Ctrl+` opens gitui as a Kitty overlay
