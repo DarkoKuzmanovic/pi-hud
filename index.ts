@@ -26,6 +26,12 @@ import {
 	fetchOpenCodeUsage,
 	opencodeToProvider,
 } from "./providers/opencode.js";
+import {
+	fetchMinimaxUsage,
+	minimaxToProvider,
+} from "./providers/minimax.js";
+import { fetchUmansUsage, umansToProvider } from "./providers/umans.js";
+import { resolveProviderId } from "./provider-routing.js";
 
 // Git
 import {
@@ -53,12 +59,7 @@ const GIT_REFRESH_MS = 5_000;
 const TPS_RENDER_THROTTLE_MS = 250;
 
 // --- Provider helpers ---
-const isOllamaProvider = (provider?: string): boolean =>
-	provider === "ollama" || provider === "ollama-cloud";
 const isWaferProvider = (provider?: string): boolean => provider === "wafer";
-const isCrofaiProvider = (provider?: string): boolean => provider === "crofai";
-const isOpenCodeProvider = (provider?: string): boolean =>
-	provider === "opencode" || provider === "opencode-go";
 
 // --- Main extension ---
 export default function piHud(pi: ExtensionAPI) {
@@ -130,6 +131,22 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "5h" }, { label: "week" }, { label: "month" }],
 	};
+	let minimaxUsage: ProviderUsage = {
+		id: "minimax",
+		name: "MiniMax",
+		icon: "\udb81\udc07",
+		status: "unknown",
+		message: "loading",
+		windows: [{ label: "5h" }, { label: "week" }],
+	};
+	let umansUsage: ProviderUsage = {
+		id: "umans",
+		name: "Umans",
+		icon: "\uee0d",
+		status: "unknown",
+		message: "loading",
+		windows: [{ label: "5h" }],
+	};
 
 	let codexInFlight: Promise<void> | null = null;
 	let anthropicInFlight: Promise<void> | null = null;
@@ -137,6 +154,8 @@ export default function piHud(pi: ExtensionAPI) {
 	let waferInFlight: Promise<void> | null = null;
 	let opencodeInFlight: Promise<void> | null = null;
 	let crofaiInFlight: Promise<void> | null = null;
+	let minimaxInFlight: Promise<void> | null = null;
+	let umansInFlight: Promise<void> | null = null;
 
 	// Cached session totals (incremental, not O(n) per render)
 	let totals = initSessionTotals();
@@ -157,14 +176,36 @@ export default function piHud(pi: ExtensionAPI) {
 	let footerTui: { requestRender: () => void } | null = null;
 	let wallClockTimer: ReturnType<typeof setInterval> | null = null;
 
+	const unsupportedUsage = (provider?: string): ProviderUsage => ({
+		id: "unsupported",
+		name: provider ? `Unsupported: ${provider}` : "Unsupported provider",
+		icon: "\udb80\ude29",
+		status: "unknown",
+		message: "unsupported",
+		windows: [{ label: "5h" }, { label: "week" }],
+	});
+
 	const getActiveUsage = (ctx: ExtensionContext): ProviderUsage => {
-		const provider = ctx.model?.provider;
-		if (provider === "anthropic") return anthropicUsage;
-		if (isOllamaProvider(provider)) return ollamaUsage;
-		if (isWaferProvider(provider)) return waferUsage;
-		if (isOpenCodeProvider(provider)) return opencodeUsage;
-		if (isCrofaiProvider(provider)) return crofaiUsage;
-		return codexUsage;
+		switch (resolveProviderId(ctx.model?.provider)) {
+			case "anthropic":
+				return anthropicUsage;
+			case "ollama-cloud":
+				return ollamaUsage;
+			case "wafer":
+				return waferUsage;
+			case "opencode":
+				return opencodeUsage;
+			case "crofai":
+				return crofaiUsage;
+			case "minimax":
+				return minimaxUsage;
+			case "codex":
+				return codexUsage;
+			case "umans":
+				return umansUsage;
+			default:
+				return unsupportedUsage(ctx.model?.provider);
+		}
 	};
 
 	// Stable hash for change detection: every provider stamps `updatedAt: Date.now()`
@@ -238,6 +279,26 @@ export default function piHud(pi: ExtensionAPI) {
 		return crofaiInFlight;
 	};
 
+	const refreshMinimax = async () => {
+		if (minimaxInFlight) return minimaxInFlight;
+		minimaxInFlight = (async () => {
+			minimaxUsage = minimaxToProvider(await fetchMinimaxUsage(), minimaxUsage);
+		})().finally(() => {
+			minimaxInFlight = null;
+		});
+		return minimaxInFlight;
+	};
+
+	const refreshUmans = async () => {
+		if (umansInFlight) return umansInFlight;
+		umansInFlight = (async () => {
+			umansUsage = umansToProvider(await fetchUmansUsage(), umansUsage);
+		})().finally(() => {
+			umansInFlight = null;
+		});
+		return umansInFlight;
+	};
+
 	const refreshOpenCode = async () => {
 		if (opencodeInFlight) return opencodeInFlight;
 		opencodeInFlight = (async () => {
@@ -252,13 +313,26 @@ export default function piHud(pi: ExtensionAPI) {
 	};
 
 	const refreshActiveProvider = (ctx: ExtensionContext) => {
-		const provider = ctx.model?.provider;
-		if (provider === "anthropic") return refreshAnthropic();
-		if (isOllamaProvider(provider)) return refreshOllama();
-		if (isWaferProvider(provider)) return refreshWafer();
-		if (isOpenCodeProvider(provider)) return refreshOpenCode();
-		if (isCrofaiProvider(provider)) return refreshCrofai();
-		return refreshCodex();
+		switch (resolveProviderId(ctx.model?.provider)) {
+			case "anthropic":
+				return refreshAnthropic();
+			case "ollama-cloud":
+				return refreshOllama();
+			case "wafer":
+				return refreshWafer();
+			case "opencode":
+				return refreshOpenCode();
+			case "crofai":
+				return refreshCrofai();
+			case "minimax":
+				return refreshMinimax();
+			case "codex":
+				return refreshCodex();
+			case "umans":
+				return refreshUmans();
+			default:
+				return Promise.resolve();
+		}
 	};
 
 	// --- Async git refresh (non-blocking) ---
@@ -309,16 +383,18 @@ export default function piHud(pi: ExtensionAPI) {
 			// Only requestRender() when something actually changed — unconditional re-renders
 			// cause the TUI to scroll the viewport back to the bottom, disrupting reading.
 			wallClockTimer = setInterval(() => {
-				const activeUsage = getActiveUsage(ctx);
-				const isWaferActive = isWaferProvider(ctx.model?.provider);
+				const activeCtx = installedCtx ?? ctx;
+				const activeUsage = getActiveUsage(activeCtx);
+				const isWaferActive = isWaferProvider(activeCtx.model?.provider);
 				const quotaRefresh = isWaferActive
 					? WAFER_QUOTA_REFRESH_MS
 					: QUOTA_REFRESH_MS;
 				const needsQuotaRefresh = Date.now() - (activeUsage.updatedAt ?? 0) > quotaRefresh;
 				if (needsQuotaRefresh) {
 					const prevUsage = stableUsageKey(activeUsage);
-					void refreshActiveProvider(ctx).then(() => {
-						const newUsage = stableUsageKey(getActiveUsage(ctx));
+					void refreshActiveProvider(activeCtx).then(() => {
+						const latestCtx = installedCtx ?? activeCtx;
+						const newUsage = stableUsageKey(getActiveUsage(latestCtx));
 						if (newUsage !== prevUsage) {
 							tui.requestRender();
 						}
@@ -326,7 +402,7 @@ export default function piHud(pi: ExtensionAPI) {
 				}
 				const needsGitRefresh = Date.now() - lastGitAt > GIT_REFRESH_MS;
 				if (needsGitRefresh) {
-					refreshGitAsync(ctx.cwd);
+					refreshGitAsync(activeCtx.cwd);
 				}
 				// Re-render when a live timer is active (the ⏱ duration display
 				// updates per-minute via fmtDuration). Quota and git refreshes are
@@ -350,13 +426,14 @@ export default function piHud(pi: ExtensionAPI) {
 				invalidate() {},
 				render(width: number): string[] {
 					try {
-						const activeUsage = getActiveUsage(ctx);
+						const activeCtx = installedCtx ?? ctx;
+						const activeUsage = getActiveUsage(activeCtx);
 						const thinking = pi.getThinkingLevel();
 
 
 						return renderFooter(
 							{
-								ctx,
+								ctx: activeCtx,
 								activeUsage,
 								totals,
 								thinkingLevel: thinking,
@@ -392,12 +469,11 @@ export default function piHud(pi: ExtensionAPI) {
 		totals = initSessionTotals();
 		try {
 			for (const entry of ctx.sessionManager.getBranch()) {
-				if (entry.type === "assistant") {
-					const usage = (entry as any).usage;
-					totals.input += usage?.input ?? 0;
-					totals.output += usage?.output ?? 0;
-					totals.cost += usage?.cost?.total ?? 0;
-				}
+				if (entry.type !== "message") continue;
+				const message = (entry as { message?: unknown }).message;
+				if (!message || typeof message !== "object") continue;
+				if ((message as { role?: unknown }).role !== "assistant") continue;
+				accumulateMessage(message, totals);
 			}
 		} catch {
 			/* Session totals sync best-effort */
@@ -417,7 +493,12 @@ export default function piHud(pi: ExtensionAPI) {
 						if (lines.length < 2) return lines;
 
 						const bgOpen = fullTheme.getBgAnsi("toolSuccessBg");
-						const bgClose = "\x1b[49m";
+						const bgClose = "\u001b[49m";
+						const resetAnsi = "\u001b[0m";
+						// biome-ignore lint/complexity/useRegexLiterals: regex literals trip noControlCharactersInRegex for ANSI escapes.
+						const sgrPattern = new RegExp("\\u001b\\[[0-9;]*m", "g");
+						// biome-ignore lint/complexity/useRegexLiterals: regex literals trip noControlCharactersInRegex for ANSI escapes.
+						const resetPattern = new RegExp("\\u001b\\[0m", "g");
 						const markerRaw = "\u258C"; // ▌ LEFT HALF BLOCK
 
 						// Detect scroll indicators from the original border lines.
@@ -432,7 +513,7 @@ export default function piHud(pi: ExtensionAPI) {
 						// Autocomplete lines come after it.
 						let bottomBorderIdx = -1;
 						for (let i = lines.length - 1; i >= 1; i--) {
-							const stripped = lines[i].replace(/\x1b\[[0-9;]*m/g, "").trim();
+							const stripped = lines[i].replace(sgrPattern, "").trim();
 							if (stripped.startsWith("─") || /↓ \d+ more/.test(stripped)) {
 								bottomBorderIdx = i;
 								break;
@@ -475,7 +556,7 @@ export default function piHud(pi: ExtensionAPI) {
 						for (const line of content) {
 							// Re-anchor background after any \x1b[0m resets inside the line
 							// (cursor highlight, color codes, etc.)
-							const repaired = line.replace(/\x1b\[0m/g, `\x1b[0m${bgOpen}`);
+							const repaired = line.replace(resetPattern, `${resetAnsi}${bgOpen}`);
 							const w = visibleWidth(line);
 							const padded = w < innerWidth
 								? repaired + " ".repeat(innerWidth - w)
@@ -510,11 +591,12 @@ export default function piHud(pi: ExtensionAPI) {
 		ctx.ui.setHeader((_tui, theme) => ({
 			render(width: number): string[] {
 				try {
-					const activeUsage = getActiveUsage(ctx);
+					const activeCtx = installedCtx ?? ctx;
+					const activeUsage = getActiveUsage(activeCtx);
 					const thinking = pi.getThinkingLevel();
 					return renderHeader(
 						{
-							ctx,
+							ctx: activeCtx,
 							activeUsage,
 							thinkingLevel: thinking,
 						},
@@ -529,6 +611,7 @@ export default function piHud(pi: ExtensionAPI) {
 	});
 
 	pi.on("model_select", (_event, ctx) => {
+		installedCtx = ctx;
 		void refreshActiveProvider(ctx);
 		footerTui?.requestRender();
 	});
@@ -658,7 +741,7 @@ export default function piHud(pi: ExtensionAPI) {
 			if (arg === "on") {
 				enabled = true;
 				install(ctx);
-				ctx.ui.notify("HUD enabled", "success");
+				ctx.ui.notify("HUD enabled", "info");
 				return;
 			}
 
@@ -692,7 +775,7 @@ export default function piHud(pi: ExtensionAPI) {
 				setActivePalette(themeName);
 				ctx.ui.notify(
 					`HUD theme: ${themeName} (applies on next session start)`,
-					"success",
+					"info",
 				);
 				return;
 			}
@@ -701,7 +784,7 @@ export default function piHud(pi: ExtensionAPI) {
 			if (arg === "ascii") {
 				const current = isAsciiMode();
 				setAsciiMode(!current);
-				ctx.ui.notify(`HUD ASCII mode: ${!current ? "ON" : "OFF"}`, "success");
+				ctx.ui.notify(`HUD ASCII mode: ${!current ? "ON" : "OFF"}`, "info");
 				if (installedCtx) install(installedCtx);
 				return;
 			}
@@ -725,7 +808,7 @@ export default function piHud(pi: ExtensionAPI) {
 				}
 				hintMode = mode;
 				footerTui?.requestRender();
-				ctx.ui.notify(`HUD hint mode: ${mode}`, "success");
+				ctx.ui.notify(`HUD hint mode: ${mode}`, "info");
 				return;
 			}
 
@@ -738,6 +821,8 @@ export default function piHud(pi: ExtensionAPI) {
 					`Wafer: ${waferUsage.status}${waferUsage.message ? ` (${waferUsage.message})` : ""}`,
 					`CrofAI: ${crofaiUsage.status}${crofaiUsage.message ? ` (${crofaiUsage.message})` : ""}`,
 					`OpenCode: ${opencodeUsage.status}${opencodeUsage.message ? ` (${opencodeUsage.message})` : ""}`,
+					`MiniMax: ${minimaxUsage.status}${minimaxUsage.message ? ` (${minimaxUsage.message})` : ""}`,
+					`Umans: ${umansUsage.status}${umansUsage.message ? ` (${umansUsage.message})` : ""}`,
 				].join("\n"),
 				"info",
 			);

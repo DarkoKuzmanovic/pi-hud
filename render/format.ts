@@ -184,15 +184,9 @@ export function paletteChip(
 
 export function renderWindow(window: UsageWindow, theme: ThemeAccess): string {
 	const pct = window.usedPercent;
-	const hasCount =
+	const hasPct = pct !== undefined && Number.isFinite(pct);
+	const hasLimit =
 		window.usedCount !== undefined && window.limitCount !== undefined;
-	const pctText =
-		pct === undefined || !Number.isFinite(pct)
-			? "n/a"
-			: formatPercent(pct, hasCount);
-	const countText = hasCount
-		? ` (${formatCount(window.usedCount!)}/${formatCount(window.limitCount!)})`
-		: "";
 	const reset = window.resetAt
 		? ` (${fmtDuration(window.resetAt - Date.now())})`
 		: "";
@@ -204,7 +198,27 @@ export function renderWindow(window: UsageWindow, theme: ThemeAccess): string {
 				: window.label === "daily"
 					? "1d"
 					: window.label;
-	return `${theme.fg("muted", `${label}:`)} ${theme.fg(usageColor(pct), pctText)}${theme.fg("dim", countText + reset)}`;
+
+	// Percent-based providers (Claude/Codex/MiniMax) show "NN% (used/limit)".
+	// Count-only providers (e.g. umans unlimited plan) show just the request
+	// count so we never render a misleading "n/a" for a working quota.
+	let value: string;
+	if (hasPct) {
+		const countText = hasLimit
+			? ` (${formatCount(window.usedCount!)}/${formatCount(window.limitCount!)})`
+			: "";
+		value = `${theme.fg(usageColor(pct), formatPercent(pct, hasLimit))}${theme.fg("dim", countText)}`;
+	} else if (hasLimit) {
+		value = theme.fg(
+			"muted",
+			`${formatCount(window.usedCount!)}/${formatCount(window.limitCount!)}`,
+		);
+	} else if (window.usedCount !== undefined) {
+		value = theme.fg("muted", formatCount(window.usedCount));
+	} else {
+		value = theme.fg(usageColor(pct), "n/a");
+	}
+	return `${theme.fg("muted", `${label}:`)} ${value}${theme.fg("dim", reset)}`;
 }
 
 export function renderProviderUsage(

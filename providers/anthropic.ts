@@ -5,7 +5,7 @@ import { readAnthropicAuth } from "./shared.js";
 import { fetchWithAuth, FetchError } from "./shared.js";
 import type { AnthropicUsageResponse, AnthropicFetchResult, ProviderUsage } from "../types.js";
 
-const CACHE_DIR = join(homedir(), ".pi", "agent", "pi-hud-cache");
+const CACHE_DIR = join(homedir(), ".pi", "agent", "cache", "pi-hud");
 const CACHE_PATH = join(CACHE_DIR, "anthropic.json");
 const MIN_BACKOFF_MS = 5 * 60_000;
 

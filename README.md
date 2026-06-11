@@ -28,6 +28,7 @@ Gradient Pi ASCII art alongside a greeting, quota breakdown, session details, an
 | **Ollama Cloud** | Firefox session cookies | Session, Weekly |
 | **Wafer** | Firefox session cookies or API key (`~/.pi/agent/auth.json`) | 5h window |
 | **OpenCode** | Firefox session cookies | Rolling, Weekly, Monthly |
+| **MiniMax** | API key (`~/.pi/agent/auth.json` or `MINIMAX_API_KEY`) | 5h, 7d |
 
 ## Install
 
@@ -58,9 +59,9 @@ Then restart Pi.
 - Registers a **header** renderer via `ctx.ui.setHeader()` shown on session start
 - Fetches provider quota asynchronously with deduplication (one in-flight request per provider)
 - Reads Firefox cookies via `sqlite3` on a temp copy of `cookies.sqlite` (Firefox locks the live DB)
-- Reads Pi auth from `~/.pi/agent/auth.json` for OAuth-based providers (Codex, Anthropic) and API-key providers (Wafer)
+- Reads Pi auth from `~/.pi/agent/auth.json` for OAuth-based providers (Codex, Anthropic) and API-key providers (Wafer, MiniMax)
 - Polls git status (`git status --porcelain`, `git rev-list`, `git log`) every 5 seconds
-- Tracks token throughput by measuring assistant message output vs. wall-clock time
+- Tracks token throughput live from assistant stream deltas and final usage metadata
 - Optionally integrates with Palimpsest (quest/instinct progress via event bus)
 
 ## Requirements

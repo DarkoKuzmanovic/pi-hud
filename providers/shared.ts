@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -13,22 +13,36 @@ export function readAuth(): Record<string, any> {
 	}
 }
 
-export function readCodexAuth(): { access: string; accountId: string } | null {
+export interface CodexAuth {
+	access: string;
+	accountId: string;
+	refresh?: string;
+	expires?: number;
+}
+
+export function writeAuth(auth: Record<string, unknown>): void {
+	writeFileSync(AUTH_PATH, `${JSON.stringify(auth, null, 2)}\n`);
+}
+
+export function readCodexAuth(): CodexAuth | null {
 	const cred = readAuth()["openai-codex"];
 	if (
-		!cred ||
-		cred.type !== "oauth" ||
+		cred?.type !== "oauth" ||
 		typeof cred.access !== "string" ||
 		typeof cred.accountId !== "string"
 	)
 		return null;
-	return { access: cred.access, accountId: cred.accountId };
+	return {
+		access: cred.access,
+		accountId: cred.accountId,
+		refresh: typeof cred.refresh === "string" ? cred.refresh : undefined,
+		expires: typeof cred.expires === "number" ? cred.expires : undefined,
+	};
 }
 
 export function readAnthropicAuth(): { access: string } | null {
 	const cred = readAuth().anthropic;
-	if (!cred || cred.type !== "oauth" || typeof cred.access !== "string")
-		return null;
+	if (cred?.type !== "oauth" || typeof cred.access !== "string") return null;
 	return { access: cred.access };
 }
 
@@ -54,6 +68,27 @@ export function readCrofaiAuth(): { access: string } | null {
 		return { access: cred.access };
 	if (cred.type === "api_key" && typeof cred.key === "string")
 		return { access: cred.key };
+	return null;
+}
+
+export function readMinimaxAuth(): { access: string } | null {
+	const cred = readAuth().minimax;
+	if (cred?.type === "api_key" && typeof cred.key === "string") {
+		return { access: cred.key };
+	}
+	const env = process.env.MINIMAX_API_KEY;
+	if (env) return { access: env };
+	return null;
+}
+
+export function readUmansAuth(): { access: string } | null {
+	const cred = readAuth().umans;
+	if (cred?.type === "oauth" && typeof cred.access === "string")
+		return { access: cred.access };
+	if (cred?.type === "api_key" && typeof cred.key === "string")
+		return { access: cred.key };
+	const env = process.env.UMANS_API_KEY;
+	if (env) return { access: env };
 	return null;
 }
 

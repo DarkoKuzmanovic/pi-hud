@@ -1,0 +1,158 @@
+# AGENTS.md — pi-hud
+
+Conventions, architecture, and lessons learned for AI coding agents working on this project.
+
+## Project overview
+
+pi-hud is a Pi coding-agent extension that renders a **terminal footer** (always visible) and **session-start header** showing provider quota, session stats, git status, and model info. It registers via `ctx.ui.setFooter()` / `ctx.ui.setHeader()` and refreshes data on a wall-clock timer + event-driven callbacks.
+
+## Architecture
+
+```
+index.ts              ← Extension entry: registers events, slash commands, shortcuts
+├── providers/        ← Provider quota fetchers (one file per provider)
+│   ├── shared.ts     ← fetchWithAuth(), readAuth(), FetchError, auth readers
+│   ├── codex.ts      ← OpenAI Codex (OAuth via auth.json)
+│   ├── anthropic.ts  ← Claude (OAuth via auth.json)
+│   ├── ollama-cloud.ts ← Ollama Cloud (Firefox cookies)
+│   ├── wafer.ts      ← Wafer (Firefox cookies or API key via auth.json)
+│   └── opencode.ts   ← OpenCode (Firefox cookies)
+├── render/
+│   ├── header.ts     ← ASCII art + gradient header, palette system
+│   ├── footer.ts     ← Multi-line footer (identity, metrics, session+statuses, hint)
+│   ├── format.ts     ← Width helpers, chips, bars, icons, color logic
+│   ├── context.ts    ← Context window display, incremental session totals
+│   └── pi-tui-shim.ts ← Re-exports from @earendil-works/pi-tui (width calc)
+├── cookies.ts        ← Firefox cookies.sqlite reader (temp-copy + sqlite3 CLI)
+├── git.ts            ← Async git status/remote/last-commit via execFile
+└── types.ts          ← All shared TypeScript types (ProviderUsage, ThemeAccess, etc.)
+```
+
+### Data flow
+
+1. **session_start** → `install(ctx)` sets footer + header renderers, resyncs session totals from branch history
+2. **30s wall-clock timer** → checks if quota/git data is stale → triggers async refresh → `requestRender()` only if data changed
+3. **Events** (model_select, agent_start/end, message_start/end) → update state + `requestRender()`
+4. **Footer render** → pure function: reads cached state, returns `string[]` lines
+5. **session_shutdown** → tears down footer/header, clears timers
+
+### In-flight dedup pattern
+
+Every provider has a `let xxxInFlight: Promise<void> | null` guard. If a refresh is already running, subsequent calls return the existing promise instead of starting a duplicate request. The `.finally()` block clears the guard.
+
+## Conventions
+
+### Code style
+
+- **ESM**: `"type": "module"` in package.json, `.js` extensions in imports
+- **No `any`** in new code — use specific types or `unknown` with narrowing
+- **No non-null assertions (`!`)** — handle the null case
+- **Import type**: use `import type { ... }` for type-only imports
+- **Error boundaries**: every `render()` method is wrapped in try/catch returning a fallback line
+- **Best-effort I/O**: cookie reads, auth reads, git commands all return `null` on failure rather than throwing
+
+### Adding a new provider
+
+1. Add the `ProviderId` variant in `types.ts`
+2. Create `providers/<name>.ts` with `fetchXxxUsage()` and `xxxToProvider()` exports
+3. Add `let xxxUsage: ProviderUsage` and `let xxxInFlight` in `index.ts`
+4. Wire `refreshXxx()` with the in-flight dedup pattern
+5. Add to `getActiveUsage()` and `refreshActiveProvider()` dispatch
+6. Add to `/hud status` output
+7. Add cookie reader in `cookies.ts` if needed (Firefox-based), or auth reader in `providers/shared.ts` (OAuth/API-key)
+
+### Footer-ownership conflict
+
+Only one extension can own `ctx.ui.setFooter()` at a time — last loader wins. If another extension also calls `setFooter`, pi-hud's footer silently disappears. There is no compositional merge.
+
+### Rendering rules
+
+- **Width**: always use `visibleWidth()` and `truncateToWidth()` from `pi-tui-shim.ts` (re-exported from `@earendil-works/pi-tui`). Never hand-roll width calculation — the previous shim undercounted emoji like ⚡ and crashed the TUI.
+- **padBetween**: left/right padding must account for ANSI escape codes (invisible chars). Use `visibleWidth()` for measurements.
+- **No unconditional `requestRender()`**: the 30s timer only calls `requestRender()` when data actually changed or a live timer is active. Unconditional re-renders scroll the viewport back to bottom, disrupting reading.
+- **Safety truncation**: footer lines must not exceed `width` — overflow crashes the TUI.
+- **Status coloring**: extension statuses on line 3 follow the white-icon / accent-value convention (see Cross-extension status protocol below).
+- **Auto-update stripping**: extmgr's `⏸ auto-update off` segment is stripped in the `.map()` step before joining status strings.
+
+### Slash commands
+
+- `/hud on|off|refresh|status|theme [name]|ascii`
+- Theme names: electric, sunset, ocean, aurora, inferno, random
+
+### Keyboard shortcut
+
+- `Ctrl+`` opens gitui in a Kitty overlay (requires `allow_remote_control yes` in kitty.conf)
+
+## Lessons learned
+
+### pi-tui width shim crash (pi-tui-shim.ts)
+
+Earlier versions shipped a hand-rolled `visibleWidth`/`truncateToWidth` that undercounted default-emoji-presentation symbols like `⚡` (U+26A1). pi-tui measured those as width 2; the shim said 1. Lines that passed our truncation check overflowed pi-tui's render-time width check by exactly the count of mismeasured glyphs and crashed the TUI.
+
+**Fix**: re-export from `@earendil-works/pi-tui` directly. The extension loader resolves `@earendil-works/pi-tui` for subdirectory extensions just like single-file ones.
+
+### Unconditional requestRender scrolls viewport
+
+Calling `requestRender()` unconditionally in the 30s timer caused the TUI to scroll the viewport back to the bottom on every tick, disrupting the user's reading position.
+
+**Fix**: only call `requestRender()` when (a) quota data actually changed (compared JSON strings), (b) git data actually changed (compared cached fields), or (c) a live run timer is active (duration display updates per-minute).
+
+### Firefox cookies.sqlite lock
+
+Firefox holds an exclusive lock on `cookies.sqlite`. Reading it directly with `sqlite3` fails with "database is locked".
+
+**Fix**: `copyFileSync` to `/tmp/pi-hud-cookies-<caller>-<timestamp>-<rand>.sqlite`, query the copy, `unlinkSync` in `finally`. The temp copy is small (~1-5 MB) and fast.
+
+### session_start totals resync
+
+On session start/resume/fork, the `totals` object starts at zero. Without resyncing from the existing branch, cumulative token/cost counts are wrong.
+
+**Fix**: iterate `ctx.sessionManager.getBranch()` on `session_start` and accumulate all existing assistant messages into `totals`. This is best-effort — errors are swallowed.
+
+### CustomEditor background color injection
+
+For non-Kitty terminals (no `KITTY_WINDOW_ID`), pi-hud injects a `CustomEditor` that paints editor content lines with the theme's `selectedBg` ANSI color. This creates a visual highlight bar effect. It re-inserts the background color after every `\x1b[0m` reset to maintain the color across nested escape sequences.
+
+### Cross-extension status protocol (delegating display to pi-hud's footer)
+
+When another extension wants visual presence in pi-hud's footer without owning a widget or running its own animation loop, use the existing status protocol:
+
+- **Producer** (other extension): `ctx.ui.setStatus("<key>", "<text>")` to show, `ctx.ui.setStatus("<key>", undefined)` to clear. The host's `setStatus` implementation auto-triggers `ui.requestRender()` (verified at `@earendil-works/pi-coding-agent/dist/modes/interactive/interactive-mode.js` — `setExtensionStatus` calls `this.ui.requestRender()`), so no manual re-render coordination is needed.
+- **Consumer** (pi-hud): read via `footerData.getExtensionStatuses().get("<key>")` at render time. Add the key to `HIDDEN_STATUSES` in `render/footer.ts` to suppress the default line-3 join when you're rendering it elsewhere (e.g. a custom chip on line 1).
+
+**Status coloring convention**: producers should split their status string into icon + value, with the icon uncolored (renders white) and the value wrapped in `theme.fg("accent", ...)`. Example: `` \uf233 ${ui.theme.fg("accent", `${connectedCount}/${total}`)} ``. This gives a consistent white-icon / blue-value appearance across all statuses.
+
+**Auto-update stripping**: the extmgr status includes `"⏸ auto-update off"` appended after the package count. Pi-hud strips this segment (regex on ` · ⏸/↻ auto-update...`) in its `.map()` step before joining, so only the package count chip appears.
+
+**Example**: the shitty-pi ultrathink extension was originally a `ctx.ui.setWidget()` above the editor with a 50ms ANSI animation interval. Moved to a static `rainbowChip()` rendered by pi-hud on line 1 next to the model chip. Ultrathink still owns detection (editor poll, manual toggle, system-prompt injection) but calls `setStatus("ultrathink", "ultrathink")` instead of managing its own widget. No more per-frame re-renders, no widget conflict with other extensions, and pi-hud controls visual style consistently with its other chips.
+
+## .gitignore
+
+Current entries: `.pi/todos/`, `.DS_Store`, `AGENTS.md`, `node_modules/`, `.pi-lens/`
+
+- `AGENTS.md` is gitignored — it's auto-generated per-project, not tracked
+- `.codegraph/` should be added (codegraph index artifacts)
+- `.plans/` should be added (pi planning artifacts)
+
+## File inventory
+
+| File | Purpose |
+|---|---|
+| `index.ts` | Extension entry point — event handlers, commands, shortcuts |
+| `types.ts` | All shared TypeScript types |
+| `cookies.ts` | Firefox cookies.sqlite reader |
+| `git.ts` | Async git status/remote/last-commit |
+| `providers/shared.ts` | `fetchWithAuth()`, `readAuth()`, auth readers, `FetchError` |
+| `providers/codex.ts` | Codex (OpenAI) quota fetcher |
+| `providers/anthropic.ts` | Anthropic (Claude) quota fetcher |
+| `providers/ollama-cloud.ts` | Ollama Cloud quota fetcher |
+| `providers/wafer.ts` | Wafer quota fetcher |
+| `providers/opencode.ts` | OpenCode quota fetcher |
+| `render/header.ts` | Session-start header (ASCII art + gradient) |
+| `render/footer.ts` | Multi-line footer renderer (4 lines: identity, metrics+quota, session+statuses+speed, hint) |
+| `render/format.ts` | Width helpers, chips, bars, color logic, icons |
+| `render/context.ts` | Context window display, incremental session totals |
+| `render/pi-tui-shim.ts` | Re-exports `visibleWidth`/`truncateToWidth` from pi-tui |
+| `install.sh` | ~~Removed~~ — use `pi install git:github.com/DarkoKuzmanovic/pi-hud` |
+| `pi-browser-partial-fork.md` | Design note for pi-browser-tools fork (not part of pi-hud) |
+| `docs/playground-extension-design.md` | Design note for a separate playground extension |

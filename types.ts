@@ -7,7 +7,10 @@ export type ProviderId =
 	| "ollama-cloud"
 	| "wafer"
 	| "crofai"
-	| "opencode";
+	| "opencode"
+	| "minimax"
+	| "umans"
+	| "unsupported";
 export type ProviderStatus = "ok" | "unknown" | "auth-needed" | "error";
 
 export interface UsageWindow {
@@ -133,6 +136,57 @@ export interface OpenCodeUsageData {
 
 export interface OpenCodeFetchResult {
 	usage: OpenCodeUsageData | null;
+	status: ProviderStatus;
+	message?: string;
+}
+
+export interface MinimaxTokenPlanRemain {
+	start_time?: number;
+	end_time?: number;
+	remains_time?: number;
+	current_interval_total_count: number;
+	current_interval_usage_count: number;
+	current_weekly_total_count: number;
+	current_weekly_usage_count: number;
+	current_interval_remaining_percent?: number;
+	current_interval_status?: number;
+	current_weekly_remaining_percent?: number;
+	current_weekly_status?: number;
+	weekly_start_time?: number;
+	weekly_end_time?: number;
+	weekly_remains_time?: number;
+	model_name?: string;
+	category?: string;
+	display_name?: string;
+}
+
+export interface MinimaxTokenPlanResponse {
+	model_remains?: MinimaxTokenPlanRemain[];
+	category_remains?: MinimaxTokenPlanRemain[];
+	base_resp?: {
+		status_code?: number;
+		status_msg?: string;
+	};
+}
+
+export interface MinimaxFetchResult {
+	usage: MinimaxTokenPlanResponse | null;
+	status: ProviderStatus;
+	message?: string;
+}
+
+export interface UmansUsageData {
+	requestsUsed: number;
+	/** null = unlimited plan (no request cap). */
+	requestsLimit: number | null;
+	/** Absolute epoch ms when the rolling window resets (0 = unknown). */
+	resetAt: number;
+	/** Rolling window length in seconds (used to label the window, e.g. 18000 = 5h). */
+	windowSeconds: number;
+}
+
+export interface UmansFetchResult {
+	usage: UmansUsageData | null;
 	status: ProviderStatus;
 	message?: string;
 }

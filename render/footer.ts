@@ -24,14 +24,15 @@ export interface FooterDeps {
 	hintMode: "cycle" | "once" | "off";
 	firstUserMessageSeen: boolean;
 }
+
 export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: any): (width: number) => string[] {
 	return (width: number) => {
 		try {
 			const { ctx, activeUsage, totals, thinkingLevel, activeStartedAt, lastRunMs, lastTps, gitDirty, gitRemote, gitLastCommit } = deps;
 			const palette = getActivePalette();
 			const ascii = isAsciiMode();
-			const vert = ascii ? "|" : "\u2502";
-			const dotSep = ascii ? "\u00b7" : "\u00b7"; // middle dot renders in both modes
+			const vert = ascii ? "|" : "│";
+			const dotSep = ascii ? "·" : "·";
 
 			const cwdName = basename(ctx.cwd) || ctx.cwd;
 			const cwdPath = compactPath(ctx.cwd);
@@ -39,7 +40,7 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 
 			const statuses = [...footerData.getExtensionStatuses().entries()]
 				.filter(([key, val]) => !HIDDEN_STATUSES.has(key) && Boolean(val))
-				.map(([, val]) => val.replace(/ · [\u21bb\u23f8]?\s*auto-update.*$/, ""))
+				.map(([, val]) => val.replace(/ · [↻⏸]?\s*auto-update.*$/, ""))
 				.join(theme.fg("dim", ` ${vert} `))
 				.replace(/\u00b7/g, theme.fg("dim", vert))
 				.replace(/\u2022/g, theme.fg("dim", vert));
@@ -58,12 +59,12 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 
 			// --- Git commit (shared across lines) ---
 			const commit = gitLastCommit.hash
-				? `${theme.fg("muted", gitLastCommit.hash)} ${truncateToWidth(gitLastCommit.subject, 36, "\u2026")} ${theme.fg("dim", gitLastCommit.age)}`
+				? `${theme.fg("muted", gitLastCommit.hash)} ${truncateToWidth(gitLastCommit.subject, 36, "…")} ${theme.fg("dim", gitLastCommit.age)}`
 				: "";
 
 			// --- Line 1: identity + folder + model state ---
 			const left1 = [
-				chip(ICON_PROJECT(), theme),
+				chip(`${ICON_PROJECT()} `, theme),
 				dimChip(`${ICON_FOLDER()} ${cwdName}`, theme),
 				dimChip(`${ICON_MODEL()} ${model}`, theme),
 				thinkingChip(thinkingLevel, theme),
@@ -75,38 +76,48 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 				statusDot(activeUsage.status, theme),
 			].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
 
-			// --- Line 2: performance metrics + quota ---
+			// --- Line 2: performance metrics ---
 			const tokenStr = totals.input > 0 || totals.output > 0
-				? `\u2191${fmtInt(totals.input)} \u2193${fmtInt(totals.output)}${cost ? ` ${cost}` : ""}`
-				: "";
-	const left2 = [tokenStr, run, location, commit].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
+				? `↑${fmtInt(totals.input)} ↓${fmtInt(totals.output)}${cost ? ` ${cost}` : ""}` : "";
+			const left2 = [tokenStr, run, location, commit].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
 
-			// Right side of line 2: quota bar (palette-tinted provider chip)
-			const right2 = renderProviderUsage(activeUsage, theme, palette);
+			// --- Right side of line 2 ---
+			// Supported providers (Anthropic/Codex/MiniMax/…) show their quota usage.
+			// Unsupported providers (e.g. umans) have no quota windows, so instead of
+			// the empty "Unsupported: x  5h: n/a  7d: n/a" row we surface live speed +
+			// session activity (tok/s │ N ⟳uptime) in that same slot.
+			let right2: string;
+			if (activeUsage.id === "unsupported") {
+				const entries = ctx.sessionManager?.getEntries?.() ?? [];
+				const msgCount = entries.filter((e: any) => e.type === "message").length;
+				const firstTs = entries[0]?.timestamp;
+				const firstMs = firstTs ? Date.parse(firstTs) : NaN;
+				const sessionUptime = Number.isFinite(firstMs) ? fmtDuration(Date.now() - firstMs) : "";
+				right2 = [speed, msgCount ? `${msgCount} \u27f3${sessionUptime}` : null]
+					.filter(Boolean)
+					.join(theme.fg("dim", ` ${vert} `));
+			} else {
+				right2 = renderProviderUsage(activeUsage, theme, palette);
+			}
 
 			// --- Line 3: session ID + git details + extension statuses ---
 			const sessionId = ctx.sessionManager.getSessionId();
 			const sessionIdDisplay = sessionId ? sessionId : "????????-????-????-????-????????????";
-			const sessionChip = theme.fg("muted", `\udb80\udda2 ${sessionIdDisplay}`);
+			const sessionChip = theme.fg("muted", `🪪 ${sessionIdDisplay}`);
 			const syncParts: string[] = [sessionChip];
 			if (gitRemote.hasRemote) {
 				if (gitRemote.ahead === 0 && gitRemote.behind === 0) {
-					syncParts.push(theme.fg("success", "\u2713 synced"));
+					syncParts.push(theme.fg("success", "✓ synced"));
 				} else {
-					if (gitRemote.ahead > 0) syncParts.push(theme.fg("warning", `\u2191${gitRemote.ahead}`));
-					if (gitRemote.behind > 0) syncParts.push(theme.fg("error", `\u2193${gitRemote.behind}`));
+					if (gitRemote.ahead > 0) syncParts.push(theme.fg("warning", `↑${gitRemote.ahead}`));
+					if (gitRemote.behind > 0) syncParts.push(theme.fg("error", `↓${gitRemote.behind}`));
 				}
 			}
 			const gitSync = syncParts.join(" ");
-		const left3 = [gitSync, statuses].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
+			const left3 = [gitSync, statuses].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
 			const right3 = speed;
 
-			// --- Line 4: hint (moved here from header to avoid kitty scrollback wipe).
-			// Footer is below the conversation viewport, so per-tick changes never fire
-			// the above-viewport diff path.
-			//   cycle = rotate every 5s (HINTS array, via nextHint cache TTL)
-			//   once  = show until first user message of session, then omit
-			//   off   = never show
+			// --- Line 4: hint ---
 			const showHint =
 				deps.hintMode === "cycle" ||
 				(deps.hintMode === "once" && !deps.firstUserMessageSeen);
@@ -118,7 +129,7 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 				padBetween(left3, right3, width),
 				...(hintLine !== null ? [hintLine] : []),
 			];
-			return lines.filter((l) => l.length > 0).map((line) => truncateToWidth(line, width, "\u2026"));
+			return lines.filter((l) => l.length > 0).map((line) => truncateToWidth(line, width, "…"));
 		} catch (err: any) {
 			return [theme.fg("error", `pi-hud: ${err?.message ?? err}`)];
 		}
