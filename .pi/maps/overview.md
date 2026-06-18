@@ -11,3 +11,80 @@ Treat it as wayfinding, not as source authority.
 ## Known orientation documents
 - `README.md — pi-hud`
 - `AGENTS.md — AGENTS.md — pi-hud`
+
+## Project guidance (from AGENTS.md)
+
+# AGENTS.md — pi-hud
+
+Conventions, architecture, and lessons learned for AI coding agents working on this project.
+
+## Project overview
+
+pi-hud is a Pi coding-agent extension that renders a **terminal footer** (always visible) and **session-start header** showing provider quota, session stats, git status, and model info. It registers via `ctx.ui.setFooter()` / `ctx.ui.setHeader()` and refreshes data on a wall-clock timer + event-driven callbacks.
+
+## Architecture
+
+```
+index.ts              ← Extension entry: registers events, slash commands, shortcuts
+├── providers/        ← Provider quota fetchers (one file per provider)
+│   ├── shared.ts     ← fetchWithAuth(), readAuth(), FetchError, auth readers
+│   ├── codex.ts      ← OpenAI Codex (OAuth via auth.json)
+│   ├── anthropic.ts  ← Claude (OAuth via auth.json)
+│   ├── ollama-cloud.ts ← Ollama Cloud (Firefox cookies)
+│   ├── opencode.ts   ← OpenCode (Firefox cookies)
+│   ├── minimax.ts    ← MiniMax (API key via auth.json or env)
+│   ├── umans.ts      ← Umans (OAuth/API key via auth.json or env)
+│   └── zai.ts        ← Z.AI (OAuth/API key via auth.json or env)
+├── render/
+│   ├── header.ts     ← ASCII art + gradient header, palette system
+│   ├── footer.ts     ← Multi-line footer (identity, metrics, session+statuses, hint)
+│   ├── format.ts     ← Width helpers, chips, bars, icons, color logic
+│   ├── context.ts    ← Context window display, incremental session totals
+│   └── pi-tui-shim.ts ← Re-exports from @earendil-works/pi-tui (width calc)
+├── cookies.ts        ← Firefox cookies.sqlite reader (temp-copy + sqlite3 CLI)
+├── git.ts            ← Async git status/remote/last-commit via execFile
+└── types.ts          ← All shared TypeScript types (ProviderUsage, ThemeAccess, etc.)
+```
+
+### Data flow
+
+1. **session_start** → `install(ctx)` sets footer + header renderers, resyncs session totals from branch history
+2. **30s wall-clock timer** → checks if quota/git data is stale → triggers async refresh → `requestRender()` only if data changed
+3. **Events** (model_select, agent_start/end, message_start/end) → update state + `requestRender()`
+4. **Footer render** → pure function: reads cached state, returns `string[]` lines
+5. **session_shutdown** → tears down footer/header, clears timers
+
+### In-flight dedup pattern
+
+Every provider has a `let xxxInFlight: Promise<void> | null` guard. If a refresh is already running, subsequent calls return the existing promise instead of starting a duplicate request. The `.finally()` block clears the guard.
+
+## Conventions
+
+### Code style
+
+- **ESM**: `"type": "module"` in package.json, `.js` extensions in imports
+- **No `any`** in new code — use specific types or `unknown` with narrowing
+- **No non-null assertions (`!`)** — handle the null case
+- **Import type**: use `import type { ... }` for type-only imports
+- **Error boundaries**: every `render()` method is wrapped in try/catch returning a fallback line
+- **Best-effort I/O**: cookie reads, auth reads, git commands all return `null` on failure rather than throwing
+
+### Adding a new provider
+
+1. Add the `ProviderId` variant in `types.ts`
+2. Create `providers/<name>.ts` with `fetchXxxUsage()` and `xxxToProvider()` exports
+3. Add `let xxxUsage: ProviderUsage` and `let xxxInFlight` in `index.ts`
+4. Wire `refreshXxx()` with the in-flight dedup pattern
+5. Add to `getActiveUsage()` and `refreshActiveProvider()` dispatch
+6. Add to `/hud status` output
+7. Add cookie reader in `cookies.ts` if needed (Firefox-based), or auth reader in `providers/shared.ts` (OAuth/API-key)
+
+### Footer-ownership conflict
+
+Only one extension can own `ctx.ui.setFooter()` at a time — last loader wins. If another extension also calls `setFooter`, pi-hud's footer silently disappears. There is no compositional merge.
+
+### Rendering rules
+
+- **Width**: always use `visibleWidth()` and `truncateToWidth()` from `pi-tui-shim.ts` (re-exported from `@earendil-works/pi-tui`). Never hand-roll width calculation — the previous shim undercounted emoji
+
+…(truncated; see AGENTS.md for the full document)

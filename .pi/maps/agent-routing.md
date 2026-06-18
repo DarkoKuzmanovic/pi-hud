@@ -16,13 +16,12 @@
 - `provider-routing.ts`
 - `providers/anthropic.ts`
 - `providers/codex.ts`
-- `providers/crofai.ts`
 - `providers/minimax.ts`
 - `providers/ollama-cloud.ts`
 - `providers/opencode.ts`
 - `providers/shared.ts`
 - `providers/umans.ts`
-- `providers/wafer.ts`
+- `providers/zai.ts`
 - `render/context.ts`
 - `render/footer.ts`
 - `render/format.ts`
@@ -32,6 +31,7 @@
 - `test/minimax.test.mjs`
 - `test/provider-routing.test.mjs`
 - `test/token-speed.test.mjs`
+- `test/zai.test.mjs`
 - `token-speed.ts`
 - `tsconfig.json`
 - `types.ts`

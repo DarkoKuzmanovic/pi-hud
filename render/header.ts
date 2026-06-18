@@ -87,8 +87,10 @@ function timeGreeting(): string {
 // --- Hints ---
 
 const HINTS = [
-	`Try /enhance <prompt> — rewrite through a stronger model (Opus) before sending to your session model`,
-	`Run /loop tests to keep running tests until they pass; use /loop custom "<cond>" for any loop`,
+	`Press Alt+1 to open the Pi Cheat Sheet — all shortcuts and useful commands in one overlay`,
+	`Alt+6 Ultrathink · Alt+7 Fusion · Alt+8 Fable · Alt+9 Ponytail — toggle modes mid-session`,
+	`Use /steer <text> to inject a steering message mid-turn without interrupting the agent`,
+	`Run /fable tui to manage which models are Fable-capable — persisted across sessions`,
 	`Use /memory to list or search past session memories saved to Obsidian Dev/Memories/`,
 	`Switch HUD theme: /hud theme ocean | sunset | aurora | inferno | electric | random`,
 	`Open /todos to see all pending, in-progress, and completed tasks`,
@@ -98,20 +100,21 @@ const HINTS = [
 	`Pass full session to the enhancer: /enhance --context=full <prompt>`,
 	`Press Ctrl+\` to open gitui as a Kitty overlay for interactive git ops`,
 	`Benchmark model speed with /speedtest — TPS, TTFT, and latency`,
-	`Generate a session recap with /recap — progress, blockers, and next steps`,
 	`Inject text mid-turn with /steer <text> (sends normally if agent is idle)`,
 	`See context usage breakdown with /context — tokens and window fill`,
 	`Pick a compaction model with /compact-model for better summary quality`,
 	`Prefix with ! to run bash commands directly from the input editor`,
-	`Press Ctrl+P to switch models mid-session without losing conversation`,
+	`Press Ctrl+P to cycle scoped models · /scoped-models to configure which ones`,
 	`Manage system prompt snippets: /sys-prompt to add, view, or delete them`,
 	`Tag your session with /color red|blue|green|yellow for tree identification`,
 	`Use /run --fork to spawn a subagent with zero session context for objective review`,
 	`Press Esc any time to interrupt the agent mid-turn and regain control`,
-	`Check active coaching prompts: /cogni shows what's injected for the current model`,
 	`Use obsidian_retrieve / obsidian_write to query and update Obsidian vault directly`,
 	`Call subagent { action: "list" } to see all registered agents and chains`,
-	`Build deep code context with codegraph_context — entry points, related symbols, and key code`,
+	`Use /pitaj to ask another model inline — /pitaj help for aliases and options`,
+	`Extract Q&A pairs from your session with /qna — great for building knowledge`,
+	`Lint your loaded extensions with /lint — catches common issues and conflicts`,
+	`Use /loop tests to keep running tests until they pass; /loop custom "<cond>" for any loop`,
 ];
 let hintIndex = 0;
 let cachedHint = "";

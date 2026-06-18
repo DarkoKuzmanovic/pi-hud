@@ -5,11 +5,10 @@ export type ProviderId =
 	| "codex"
 	| "anthropic"
 	| "ollama-cloud"
-	| "wafer"
-	| "crofai"
 	| "opencode"
 	| "minimax"
 	| "umans"
+	| "zai"
 	| "unsupported";
 export type ProviderStatus = "ok" | "unknown" | "auth-needed" | "error";
 
@@ -99,28 +98,20 @@ export interface OllamaFetchResult {
 	message?: string;
 }
 
-export interface WaferUsageData {
-	windowPercent: number;
-	windowRequests?: number;
-	windowRequestLimit?: number;
-	windowResetAt: number;
+export interface ZaiUsageData {
+	/** 5-hour rolling window. */
+	fiveHourPercent?: number;
+	fiveHourUsedTokens?: number;
+	fiveHourLimitTokens?: number;
+	fiveHourResetAt?: number;
+	/** Weekly quota + 7-day raw token count. */
+	sevenDayPercent?: number;
+	sevenDayResetAt?: number;
+	sevenDayTokens?: number;
 }
 
-export interface WaferFetchResult {
-	usage: WaferUsageData | null;
-	status: ProviderStatus;
-	message?: string;
-}
-
-export interface CrofAIUsageData {
-	windowRequests: number;
-	windowRequestLimit: number;
-	credits: number;
-	windowResetAt: number;
-}
-
-export interface CrofAIFetchResult {
-	usage: CrofAIUsageData | null;
+export interface ZaiFetchResult {
+	usage: ZaiUsageData | null;
 	status: ProviderStatus;
 	message?: string;
 }

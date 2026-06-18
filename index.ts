@@ -20,8 +20,6 @@ import {
 	fetchOllamaUsage,
 	ollamaToProvider,
 } from "./providers/ollama-cloud.js";
-import { fetchWaferUsage, waferToProvider } from "./providers/wafer.js";
-import { fetchCrofaiUsage, crofaiToProvider } from "./providers/crofai.js";
 import {
 	fetchOpenCodeUsage,
 	opencodeToProvider,
@@ -31,6 +29,7 @@ import {
 	minimaxToProvider,
 } from "./providers/minimax.js";
 import { fetchUmansUsage, umansToProvider } from "./providers/umans.js";
+import { fetchZaiUsage, zaiToProvider } from "./providers/zai.js";
 import { resolveProviderId } from "./provider-routing.js";
 
 // Git
@@ -54,12 +53,10 @@ import { setAsciiMode, isAsciiMode } from "./render/format.js";
 
 // --- Constants ---
 const QUOTA_REFRESH_MS = 60_000;
-const WAFER_QUOTA_REFRESH_MS = 60_000;
 const GIT_REFRESH_MS = 5_000;
 const TPS_RENDER_THROTTLE_MS = 250;
 
 // --- Provider helpers ---
-const isWaferProvider = (provider?: string): boolean => provider === "wafer";
 
 // --- Main extension ---
 export default function piHud(pi: ExtensionAPI) {
@@ -107,22 +104,6 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "5h" }, { label: "week" }],
 	};
-	let waferUsage: ProviderUsage = {
-		id: "wafer",
-		name: "Wafer",
-		icon: "\uee0d",
-		status: "unknown",
-		message: "loading",
-		windows: [{ label: "5h" }],
-	};
-	let crofaiUsage: ProviderUsage = {
-		id: "crofai",
-		name: "CrofAI",
-		icon: "\uee0d",
-		status: "unknown",
-		message: "loading",
-		windows: [{ label: "daily" }],
-	};
 	let opencodeUsage: ProviderUsage = {
 		id: "opencode",
 		name: "OpenCode",
@@ -147,15 +128,22 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "5h" }],
 	};
+	let zaiUsage: ProviderUsage = {
+		id: "zai",
+		name: "Z.AI",
+		icon: "\uee0d",
+		status: "unknown",
+		message: "loading",
+		windows: [{ label: "5h" }, { label: "week" }],
+	};
 
 	let codexInFlight: Promise<void> | null = null;
 	let anthropicInFlight: Promise<void> | null = null;
 	let ollamaInFlight: Promise<void> | null = null;
-	let waferInFlight: Promise<void> | null = null;
 	let opencodeInFlight: Promise<void> | null = null;
-	let crofaiInFlight: Promise<void> | null = null;
 	let minimaxInFlight: Promise<void> | null = null;
 	let umansInFlight: Promise<void> | null = null;
+	let zaiInFlight: Promise<void> | null = null;
 
 	// Cached session totals (incremental, not O(n) per render)
 	let totals = initSessionTotals();
@@ -191,18 +179,16 @@ export default function piHud(pi: ExtensionAPI) {
 				return anthropicUsage;
 			case "ollama-cloud":
 				return ollamaUsage;
-			case "wafer":
-				return waferUsage;
 			case "opencode":
 				return opencodeUsage;
-			case "crofai":
-				return crofaiUsage;
 			case "minimax":
 				return minimaxUsage;
 			case "codex":
 				return codexUsage;
 			case "umans":
 				return umansUsage;
+			case "zai":
+				return zaiUsage;
 			default:
 				return unsupportedUsage(ctx.model?.provider);
 		}
@@ -259,26 +245,6 @@ export default function piHud(pi: ExtensionAPI) {
 		return ollamaInFlight;
 	};
 
-	const refreshWafer = async () => {
-		if (waferInFlight) return waferInFlight;
-		waferInFlight = (async () => {
-			waferUsage = waferToProvider(await fetchWaferUsage(), waferUsage);
-		})().finally(() => {
-			waferInFlight = null;
-		});
-		return waferInFlight;
-	};
-
-	const refreshCrofai = async () => {
-		if (crofaiInFlight) return crofaiInFlight;
-		crofaiInFlight = (async () => {
-			crofaiUsage = crofaiToProvider(await fetchCrofaiUsage(), crofaiUsage);
-		})().finally(() => {
-			crofaiInFlight = null;
-		});
-		return crofaiInFlight;
-	};
-
 	const refreshMinimax = async () => {
 		if (minimaxInFlight) return minimaxInFlight;
 		minimaxInFlight = (async () => {
@@ -297,6 +263,16 @@ export default function piHud(pi: ExtensionAPI) {
 			umansInFlight = null;
 		});
 		return umansInFlight;
+	};
+
+	const refreshZai = async () => {
+		if (zaiInFlight) return zaiInFlight;
+		zaiInFlight = (async () => {
+			zaiUsage = zaiToProvider(await fetchZaiUsage(), zaiUsage);
+		})().finally(() => {
+			zaiInFlight = null;
+		});
+		return zaiInFlight;
 	};
 
 	const refreshOpenCode = async () => {
@@ -318,18 +294,16 @@ export default function piHud(pi: ExtensionAPI) {
 				return refreshAnthropic();
 			case "ollama-cloud":
 				return refreshOllama();
-			case "wafer":
-				return refreshWafer();
 			case "opencode":
 				return refreshOpenCode();
-			case "crofai":
-				return refreshCrofai();
 			case "minimax":
 				return refreshMinimax();
 			case "codex":
 				return refreshCodex();
 			case "umans":
 				return refreshUmans();
+			case "zai":
+				return refreshZai();
 			default:
 				return Promise.resolve();
 		}
@@ -385,11 +359,7 @@ export default function piHud(pi: ExtensionAPI) {
 			wallClockTimer = setInterval(() => {
 				const activeCtx = installedCtx ?? ctx;
 				const activeUsage = getActiveUsage(activeCtx);
-				const isWaferActive = isWaferProvider(activeCtx.model?.provider);
-				const quotaRefresh = isWaferActive
-					? WAFER_QUOTA_REFRESH_MS
-					: QUOTA_REFRESH_MS;
-				const needsQuotaRefresh = Date.now() - (activeUsage.updatedAt ?? 0) > quotaRefresh;
+				const needsQuotaRefresh = Date.now() - (activeUsage.updatedAt ?? 0) > QUOTA_REFRESH_MS;
 				if (needsQuotaRefresh) {
 					const prevUsage = stableUsageKey(activeUsage);
 					void refreshActiveProvider(activeCtx).then(() => {
@@ -818,11 +788,10 @@ export default function piHud(pi: ExtensionAPI) {
 					`Codex: ${codexUsage.status}${codexUsage.message ? ` (${codexUsage.message})` : ""}`,
 					`Anthropic: ${anthropicUsage.status}${anthropicUsage.message ? ` (${anthropicUsage.message})` : ""}`,
 					`Ollama: ${ollamaUsage.status}${ollamaUsage.message ? ` (${ollamaUsage.message})` : ""}`,
-					`Wafer: ${waferUsage.status}${waferUsage.message ? ` (${waferUsage.message})` : ""}`,
-					`CrofAI: ${crofaiUsage.status}${crofaiUsage.message ? ` (${crofaiUsage.message})` : ""}`,
 					`OpenCode: ${opencodeUsage.status}${opencodeUsage.message ? ` (${opencodeUsage.message})` : ""}`,
 					`MiniMax: ${minimaxUsage.status}${minimaxUsage.message ? ` (${minimaxUsage.message})` : ""}`,
 					`Umans: ${umansUsage.status}${umansUsage.message ? ` (${umansUsage.message})` : ""}`,
+					`Z.AI: ${zaiUsage.status}${zaiUsage.message ? ` (${zaiUsage.message})` : ""}`,
 				].join("\n"),
 				"info",
 			);

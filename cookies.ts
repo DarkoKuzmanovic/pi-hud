@@ -135,14 +135,6 @@ export function readOllamaCookies(): string | null {
 	}, "ollama");
 }
 
-export function readWaferCookies(): string | null {
-	return readFirefoxCookies({
-		hosts: ["app.wafer.ai", ".app.wafer.ai", "wafer.ai", ".wafer.ai"],
-		cookieNames: [], // Read all non-expired cookies for these hosts
-		format: "name=value",
-	}, "wafer");
-}
-
 export function readOpenCodeCookies(): string | null {
 	return readFirefoxCookies({
 		hosts: ["opencode.ai", ".opencode.ai"],

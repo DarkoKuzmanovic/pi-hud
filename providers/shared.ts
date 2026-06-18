@@ -46,31 +46,6 @@ export function readAnthropicAuth(): { access: string } | null {
 	return { access: cred.access };
 }
 
-export function readWaferAuth(): { access: string } | null {
-	const cred = readAuth().wafer;
-	if (!cred) return null;
-	if (cred.type === "oauth" && typeof cred.access === "string")
-		return { access: cred.access };
-	if (cred.type === "api_key" && typeof cred.key === "string")
-		return { access: cred.key };
-	return null;
-}
-
-export function readCrofaiAuth(): { access: string } | null {
-	const cred = readAuth().crofai;
-	if (!cred) {
-		// Fall back to env var (pi-crofai supports CROFAI_API_KEY)
-		const env = process.env.CROFAI_API_KEY;
-		if (env) return { access: env };
-		return null;
-	}
-	if (cred.type === "oauth" && typeof cred.access === "string")
-		return { access: cred.access };
-	if (cred.type === "api_key" && typeof cred.key === "string")
-		return { access: cred.key };
-	return null;
-}
-
 export function readMinimaxAuth(): { access: string } | null {
 	const cred = readAuth().minimax;
 	if (cred?.type === "api_key" && typeof cred.key === "string") {
@@ -88,6 +63,17 @@ export function readUmansAuth(): { access: string } | null {
 	if (cred?.type === "api_key" && typeof cred.key === "string")
 		return { access: cred.key };
 	const env = process.env.UMANS_API_KEY;
+	if (env) return { access: env };
+	return null;
+}
+
+export function readZaiAuth(): { access: string } | null {
+	const cred = readAuth().zai;
+	if (cred?.type === "api_key" && typeof cred.key === "string")
+		return { access: cred.key };
+	if (cred?.type === "oauth" && typeof cred.access === "string")
+		return { access: cred.access };
+	const env = process.env.ZAI_API_KEY;
 	if (env) return { access: env };
 	return null;
 }

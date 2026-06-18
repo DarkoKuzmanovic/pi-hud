@@ -26,9 +26,10 @@ Gradient Pi ASCII art alongside a greeting, quota breakdown, session details, an
 | **Codex** (OpenAI) | OAuth (`~/.pi/agent/auth.json`) | 5h, 7d |
 | **Anthropic** (Claude) | OAuth (`~/.pi/agent/auth.json`) | 5h, 7d |
 | **Ollama Cloud** | Firefox session cookies | Session, Weekly |
-| **Wafer** | Firefox session cookies or API key (`~/.pi/agent/auth.json`) | 5h window |
 | **OpenCode** | Firefox session cookies | Rolling, Weekly, Monthly |
 | **MiniMax** | API key (`~/.pi/agent/auth.json` or `MINIMAX_API_KEY`) | 5h, 7d |
+| **Umans** | API key (`~/.pi/agent/auth.json` or `UMANS_API_KEY`) | Rolling (5h) |
+| **Z.AI** | API key (`~/.pi/agent/auth.json` or `ZAI_API_KEY`) | 5h, 7d |
 
 ## Install
 
@@ -59,7 +60,7 @@ Then restart Pi.
 - Registers a **header** renderer via `ctx.ui.setHeader()` shown on session start
 - Fetches provider quota asynchronously with deduplication (one in-flight request per provider)
 - Reads Firefox cookies via `sqlite3` on a temp copy of `cookies.sqlite` (Firefox locks the live DB)
-- Reads Pi auth from `~/.pi/agent/auth.json` for OAuth-based providers (Codex, Anthropic) and API-key providers (Wafer, MiniMax)
+- Reads Pi auth from `~/.pi/agent/auth.json` for OAuth-based providers (Codex, Anthropic) and API-key providers (MiniMax, Umans, Z.AI)
 - Polls git status (`git status --porcelain`, `git rev-list`, `git log`) every 5 seconds
 - Tracks token throughput live from assistant stream deltas and final usage metadata
 - Optionally integrates with Palimpsest (quest/instinct progress via event bus)
@@ -67,7 +68,7 @@ Then restart Pi.
 ## Requirements
 
 - Pi with TUI support (`ctx.hasUI`)
-- `sqlite3` CLI — for reading Firefox cookies (Ollama, Wafer, OpenCode)
+- `sqlite3` CLI — for reading Firefox cookies (Ollama, OpenCode)
 - Firefox — for cookie-based providers (optional, OAuth providers work without it)
 - [Kitty](https://sw.kovidgoyal.net/kitty/) terminal — for Ctrl+` gitui overlay (optional)
 

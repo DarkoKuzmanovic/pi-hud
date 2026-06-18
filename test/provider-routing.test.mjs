@@ -30,7 +30,7 @@ function compileToTemp() {
   return outDir;
 }
 
-test("active provider routing maps MiniMax and Codex explicitly", async () => {
+test("active provider routing maps supported provider aliases explicitly", async () => {
   const buildDir = compileToTemp();
   try {
     const { resolveProviderId } = await import(
@@ -41,6 +41,9 @@ test("active provider routing maps MiniMax and Codex explicitly", async () => {
     assert.equal(resolveProviderId("minimax-cn"), "minimax");
     assert.equal(resolveProviderId("openai-codex"), "codex");
     assert.equal(resolveProviderId("codex"), "codex");
+    assert.equal(resolveProviderId("zai"), "zai");
+    assert.equal(resolveProviderId("z.ai"), "zai");
+    assert.equal(resolveProviderId("z-ai"), "zai");
     assert.equal(resolveProviderId("mimo"), undefined);
   } finally {
     rmSync(buildDir, { recursive: true, force: true });

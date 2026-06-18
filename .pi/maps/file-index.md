@@ -2,6 +2,7 @@
 # File index
 
 Generated file list, excluding VCS, caches, virtualenvs, and `.pi/maps`.
+Python files list their navigable symbols (functions, classes, methods) with line numbers. Line numbers are wayfinding; verify against source before editing.
 
 - `.gitignore`
 - `IMPLEMENTATION_PLAN.md`
@@ -16,13 +17,12 @@ Generated file list, excluding VCS, caches, virtualenvs, and `.pi/maps`.
 - `provider-routing.ts`
 - `providers/anthropic.ts`
 - `providers/codex.ts`
-- `providers/crofai.ts`
 - `providers/minimax.ts`
 - `providers/ollama-cloud.ts`
 - `providers/opencode.ts`
 - `providers/shared.ts`
 - `providers/umans.ts`
-- `providers/wafer.ts`
+- `providers/zai.ts`
 - `render/context.ts`
 - `render/footer.ts`
 - `render/format.ts`
@@ -32,7 +32,8 @@ Generated file list, excluding VCS, caches, virtualenvs, and `.pi/maps`.
 - `test/minimax.test.mjs`
 - `test/provider-routing.test.mjs`
 - `test/token-speed.test.mjs`
+- `test/zai.test.mjs`
 - `token-speed.ts`
 - `tsconfig.json`
 - `types.ts`
-<!-- 16719 file(s) excluded by .gitignore -->
+<!-- 16746 file(s) excluded by .gitignore -->
