@@ -28,6 +28,7 @@ export interface ProviderUsage {
 	message?: string;
 	updatedAt?: number;
 	windows: UsageWindow[];
+	concurrency?: { used: number; limit: number | null };
 }
 
 // --- Theme type (replaces `any`) ---
@@ -174,6 +175,10 @@ export interface UmansUsageData {
 	resetAt: number;
 	/** Rolling window length in seconds (used to label the window, e.g. 18000 = 5h). */
 	windowSeconds: number;
+	/** Active concurrent sessions (for providers that report concurrency, e.g. Umans). */
+	concurrencyUsed: number;
+	/** Concurrency cap (null = unlimited/not reported). */
+	concurrencyLimit: number | null;
 }
 
 export interface UmansFetchResult {

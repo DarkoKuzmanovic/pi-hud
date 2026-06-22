@@ -462,7 +462,7 @@ export default function piHud(pi: ExtensionAPI) {
 						const lines = super.render(innerWidth);
 						if (lines.length < 2) return lines;
 
-						const bgOpen = fullTheme.getBgAnsi("toolSuccessBg");
+						const bgOpen = fullTheme.getBgAnsi("userMessageBg");
 						const bgClose = "\u001b[49m";
 						const resetAnsi = "\u001b[0m";
 						// biome-ignore lint/complexity/useRegexLiterals: regex literals trip noControlCharactersInRegex for ANSI escapes.
@@ -506,8 +506,6 @@ export default function piHud(pi: ExtensionAPI) {
 						// or scroll indicator replaces ▌ on that line. Padded to markerWidth.
 						const makeMarker = (indicator?: string): string => {
 							const glyph = indicator ?? markerRaw;
-							// Only apply fg color — bg is set at the line level via bgOpen.
-							// Using theme.bg here would emit \x1b[49m and break the line's background.
 							const styled = this.borderColor(glyph);
 							const styledVisible = indicator ? indicator.length : 1;
 							const pad = " ".repeat(Math.max(0, markerWidth - styledVisible));

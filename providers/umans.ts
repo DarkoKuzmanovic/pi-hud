@@ -11,9 +11,10 @@ const USAGE_URL = "https://api.code.umans.ai/v1/usage";
 interface UmansUsageResponse {
 	limits?: {
 		requests?: { limit?: number | null; window_seconds?: number | null };
+		concurrency?: { limit?: number | null };
 	};
 	window?: { resets_at?: string; remaining_minutes?: number | null };
-	usage?: { requests_in_window?: number | null };
+	usage?: { requests_in_window?: number | null; concurrent_sessions?: number | null };
 }
 
 function isValidUmansResponse(value: unknown): value is UmansUsageResponse {
@@ -50,6 +51,12 @@ export async function fetchUmansUsage(): Promise<UmansFetchResult> {
 		const requestsLimit =
 			typeof limit === "number" && limit > 0 ? limit : null;
 		const windowSeconds = parsed.limits?.requests?.window_seconds ?? 18_000;
+		const concurrencyLimitRaw = parsed.limits?.concurrency?.limit;
+		const concurrencyLimit =
+			typeof concurrencyLimitRaw === "number" && concurrencyLimitRaw > 0
+				? concurrencyLimitRaw
+				: null;
+		const concurrencyUsed = parsed.usage?.concurrent_sessions ?? 0;
 
 		// Prefer the absolute reset timestamp; fall back to remaining_minutes.
 		let resetAt = 0;
@@ -67,6 +74,8 @@ export async function fetchUmansUsage(): Promise<UmansFetchResult> {
 			requestsLimit,
 			resetAt,
 			windowSeconds,
+			concurrencyUsed,
+			concurrencyLimit,
 		};
 		return { usage, status: "ok" };
 	} catch (err) {
@@ -99,7 +108,7 @@ export function umansToProvider(
 		};
 	}
 
-	const { requestsUsed, requestsLimit, resetAt, windowSeconds } = result.usage;
+	const { requestsUsed, requestsLimit, resetAt, windowSeconds, concurrencyUsed, concurrencyLimit } = result.usage;
 	const hasLimit = requestsLimit !== null && requestsLimit > 0;
 
 	return {
@@ -108,6 +117,7 @@ export function umansToProvider(
 		icon: "\uee0d",
 		status: "ok",
 		updatedAt: Date.now(),
+		concurrency: { used: concurrencyUsed, limit: concurrencyLimit },
 		windows: [
 			{
 				label: windowLabel(windowSeconds),

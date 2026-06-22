@@ -10,6 +10,19 @@ import { getActivePalette, nextHint } from "./header.js";
 
 const HIDDEN_STATUSES = new Set(["claude-oauth-ready", "claude-oauth-issue", "ultrathink"]);
 
+const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
+
+function formatExtensionStatus(value: string, theme: ThemeAccess): string {
+	const visible = value.replace(ANSI_PATTERN, "").replace(/\s+/g, " ").trim();
+	const withoutAutoUpdate = visible.replace(/\s*(?:[·•|│]\s*)?[↻⏸]?\s*auto-update\b.*$/iu, "").trim();
+	const mcp = withoutAutoUpdate.match(/^MCP:\s*(\S+)\s+servers?\b/iu);
+	if (mcp) return ` ${theme.fg("dim", mcp[1])}`;
+	const packages = withoutAutoUpdate.match(/^(\d+)\s+pkgs?\b/iu);
+	if (packages) return ` ${theme.fg("dim", packages[1])}`;
+	if (!withoutAutoUpdate) return "";
+	return withoutAutoUpdate === visible ? value : withoutAutoUpdate;
+}
+
 export interface FooterDeps {
 	ctx: ExtensionContext;
 	activeUsage: ProviderUsage;
@@ -38,9 +51,15 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 			const cwdPath = compactPath(ctx.cwd);
 			const branch = footerData.getGitBranch();
 
-			const statuses = [...footerData.getExtensionStatuses().entries()]
-				.filter(([key, val]) => !HIDDEN_STATUSES.has(key) && Boolean(val))
-				.map(([, val]) => val.replace(/ · [↻⏸]?\s*auto-update.*$/, ""))
+			// Separate pi-pulse ("tps") from other extension statuses so it gets its own line.
+			const extEntries = [...footerData.getExtensionStatuses().entries()]
+				.filter(([key, val]) => !HIDDEN_STATUSES.has(key) && Boolean(val));
+			const tpsRaw = extEntries.find(([key]) => key === "tps")?.[1] ?? "";
+			const tpsLine = tpsRaw ? formatExtensionStatus(tpsRaw, theme) : "";
+			const statuses = extEntries
+				.filter(([key]) => key !== "tps")
+				.map(([, val]) => formatExtensionStatus(val, theme))
+				.filter(Boolean)
 				.join(theme.fg("dim", ` ${vert} `))
 				.replace(/\u00b7/g, theme.fg("dim", vert))
 				.replace(/\u2022/g, theme.fg("dim", vert));
@@ -100,10 +119,10 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 				right2 = renderProviderUsage(activeUsage, theme, palette);
 			}
 
-			// --- Line 3: session ID + git details + extension statuses ---
+			// --- Line 3: session ID + git details + extension statuses (excluding tps) ---
 			const sessionId = ctx.sessionManager.getSessionId();
 			const sessionIdDisplay = sessionId ? sessionId : "????????-????-????-????-????????????";
-			const sessionChip = theme.fg("muted", `🪪 ${sessionIdDisplay}`);
+			const sessionChip = theme.fg("muted", `\u{f0929} ${sessionIdDisplay}`);
 			const syncParts: string[] = [sessionChip];
 			if (gitRemote.hasRemote) {
 				if (gitRemote.ahead === 0 && gitRemote.behind === 0) {
@@ -117,7 +136,9 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 			const left3 = [gitSync, statuses].filter(Boolean).join(theme.fg("dim", ` ${vert} `));
 			const right3 = speed;
 
-			// --- Line 4: hint ---
+			// --- Line 4: pi-pulse (tps) on its own line ---
+
+			// --- Line 5: hint ---
 			const showHint =
 				deps.hintMode === "cycle" ||
 				(deps.hintMode === "once" && !deps.firstUserMessageSeen);
@@ -127,6 +148,7 @@ export function renderFooter(deps: FooterDeps, theme: ThemeAccess, footerData: a
 				padBetween(left1, right1, width),
 				padBetween(left2, right2, width),
 				padBetween(left3, right3, width),
+				...(tpsLine ? [tpsLine] : []),
 				...(hintLine !== null ? [hintLine] : []),
 			];
 			return lines.filter((l) => l.length > 0).map((line) => truncateToWidth(line, width, "…"));

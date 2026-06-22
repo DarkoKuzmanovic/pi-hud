@@ -79,9 +79,9 @@ export const SEP_R = () => (asciiMode ? "]" : "\ue0b4");
 // Icon fallbacks: Nerd Font PUA codepoints → readable alternatives
 export const ICON_PROJECT = () => (asciiMode ? "\u03c0" : "\ue22c"); // π vs Nerd Font pi
 export const ICON_FOLDER = () => (asciiMode ? "📁" : ""); // 📁 vs nf-cod-folder_opened
-export const ICON_MODEL = () => (asciiMode ? "\ud83e\udd16" : "\udb80\ude29"); // 🤖 vs Nerd Font robot
+export const ICON_MODEL = () => (asciiMode ? "\ud83e\udd16" : "\uf0c3"); // 🤖 vs nf-fa-flask
 export const ICON_BRANCH = () => (asciiMode ? "⎇" : ""); // ⎇ vs nf-fa-code_fork
-export const ICON_CTX = () => (asciiMode ? "⊞" : ""); // ⊞ vs nf-cod-pie_chart
+export const ICON_CTX = () => (asciiMode ? "⊞" : ""); // ⊞ vs requested context icon
 export const ICON_CWD = () => (asciiMode ? "📁" : "\ue5ff"); // 📁 vs nf-cod-root_folder (distinct from ICON_FOLDER)
 // Alternative ICON_CWD candidates — swap the PUA codepoint to try:
 //   \uf07b  nf-fa-folder_open        — classic open folder (FontAwesome)
@@ -232,12 +232,15 @@ export function renderProviderUsage(
 	const windows = provider.windows
 		.map((w) => renderWindow(w, theme))
 		.join(theme.fg("dim", "  "));
+	const concurrencyPart = provider.concurrency
+		? `${theme.fg("dim", " | ")}${theme.fg("muted", `\u27e0 ${provider.concurrency.used}${provider.concurrency.limit != null ? `/${provider.concurrency.limit}` : ""}`)}`
+		: "";
 	const suffix = provider.message
 		? ` ${theme.fg(provider.status === "error" ? "error" : "dim", provider.message)}`
 		: provider.status !== "ok"
 			? ` ${theme.fg("dim", provider.status)}`
 			: "";
-	return `${providerChip}  ${windows}${suffix}`;
+	return `${providerChip}  ${windows}${concurrencyPart}${suffix}`;
 }
 
 // --- Layout ---
