@@ -88,9 +88,8 @@ function timeGreeting(): string {
 
 const HINTS = [
 	`Press Alt+1 to open the Pi Cheat Sheet — all shortcuts and useful commands in one overlay`,
-	`Alt+6 Ultrathink · Alt+7 Fusion · Alt+8 Fable · Alt+9 Ponytail — toggle modes mid-session`,
+	`Alt+6 Ultrathink · Alt+7 Fusion · Alt+9 Ponytail — toggle modes mid-session`,
 	`Use /steer <text> to inject a steering message mid-turn without interrupting the agent`,
-	`Run /fable tui to manage which models are Fable-capable — persisted across sessions`,
 	`Use /memory to list or search past session memories saved to Obsidian Dev/Memories/`,
 	`Switch HUD theme: /hud theme ocean | sunset | aurora | inferno | electric | random`,
 	`Open /todos to see all pending, in-progress, and completed tasks`,
