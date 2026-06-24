@@ -1,4 +1,3 @@
-import { basename } from "node:path";
 import { homedir } from "node:os";
 import { truncateToWidth, visibleWidth } from "./pi-tui-shim.js";
 import type { UsageWindow, ProviderUsage, ThemeAccess } from "../types.js";
@@ -64,7 +63,8 @@ export function formatCount(count: number): string {
 
 // --- ASCII fallback mode ---
 
-let asciiMode = false;
+const initialHudIconMode = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.HUD_ICONS;
+let asciiMode = initialHudIconMode === "none";
 export function setAsciiMode(v: boolean): void {
 	asciiMode = v;
 }
@@ -256,7 +256,7 @@ export function padBetween(left: string, right: string, width: number): string {
 			: left;
 	const space = Math.max(1, width - visibleWidth(fittedLeft) - rightWidth);
 	const raw = fittedLeft + " ".repeat(space) + right;
-	return visibleWidth(raw) > width ? truncateToWidth(raw, width, "…") : raw;
+	return truncateToWidth(raw, width, "…");
 }
 
 // Re-export shim functions for sibling modules

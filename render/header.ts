@@ -2,7 +2,7 @@ import { VERSION, type ExtensionContext } from "@earendil-works/pi-coding-agent"
 import { truncateToWidth, visibleWidth } from "./format.js";
 import { basename } from "node:path";
 import type { ProviderUsage, ThemeAccess } from "../types.js";
-import { compactModelName, compactPath, quotaChip } from "./format.js";
+import { compactModelName, compactPath } from "./format.js";
 // --- ASCII art + gradient ---
 
 const PI_ART = [
@@ -84,54 +84,6 @@ function timeGreeting(): string {
 	return "Late night session \ud83c\udf19";
 }
 
-// --- Hints ---
-
-const HINTS = [
-	`Press Alt+1 to open the Pi Cheat Sheet — all shortcuts and useful commands in one overlay`,
-	`Alt+6 Ultrathink · Alt+7 Fusion · Alt+9 Ponytail — toggle modes mid-session`,
-	`Use /steer <text> to inject a steering message mid-turn without interrupting the agent`,
-	`Use /memory to list or search past session memories saved to Obsidian Dev/Memories/`,
-	`Switch HUD theme: /hud theme ocean | sunset | aurora | inferno | electric | random`,
-	`Open /todos to see all pending, in-progress, and completed tasks`,
-	`Delegate with /run <agent> <task>; add --bg for background or --fork for fresh context`,
-	`Chain agents: /chain scout "explore" -> planner "design" -> coder "implement"`,
-	`Fan out with /parallel: reviewer "check auth" -> tester "verify" [--bg]`,
-	`Pass full session to the enhancer: /enhance --context=full <prompt>`,
-	`Press Ctrl+\` to open gitui as a Kitty overlay for interactive git ops`,
-	`Benchmark model speed with /speedtest — TPS, TTFT, and latency`,
-	`Inject text mid-turn with /steer <text> (sends normally if agent is idle)`,
-	`See context usage breakdown with /context — tokens and window fill`,
-	`Pick a compaction model with /compact-model for better summary quality`,
-	`Prefix with ! to run bash commands directly from the input editor`,
-	`Press Ctrl+P to cycle scoped models · /scoped-models to configure which ones`,
-	`Manage system prompt snippets: /sys-prompt to add, view, or delete them`,
-	`Tag your session with /color red|blue|green|yellow for tree identification`,
-	`Use /run --fork to spawn a subagent with zero session context for objective review`,
-	`Press Esc any time to interrupt the agent mid-turn and regain control`,
-	`Use obsidian_retrieve / obsidian_write to query and update Obsidian vault directly`,
-	`Call subagent { action: "list" } to see all registered agents and chains`,
-	`Use /pitaj to ask another model inline — /pitaj help for aliases and options`,
-	`Extract Q&A pairs from your session with /qna — great for building knowledge`,
-	`Lint your loaded extensions with /lint — catches common issues and conflicts`,
-	`Use /loop tests to keep running tests until they pass; /loop custom "<cond>" for any loop`,
-];
-let hintIndex = 0;
-let cachedHint = "";
-let hintChangedAt = 0;
-export function nextHint(): string {
-	const now = Date.now();
-	// Cache hint for 5s to avoid rapid cycling on terminal resize
-	if (cachedHint && now - hintChangedAt < 5000) return cachedHint;
-	const hint = HINTS[hintIndex % HINTS.length];
-	hintIndex++;
-	cachedHint = hint;
-	hintChangedAt = now;
-	return hint;
-}
-export function resetHintCycle(): void {
-	hintIndex = 0;
-	cachedHint = "";
-}
 // --- Resource counts ---
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -201,7 +153,7 @@ export interface HeaderDeps {
 export function renderHeader(deps: HeaderDeps, theme: ThemeAccess): (width: number) => string[] {
 	return (width: number) => {
 		try {
-			const { ctx, activeUsage, thinkingLevel } = deps;
+			const { ctx, thinkingLevel } = deps;
 			const artLines = renderGradientArt();
 			const artW = PI_ART_W;
 			const gap = 4;

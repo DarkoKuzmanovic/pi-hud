@@ -7,7 +7,7 @@ import { visibleWidth } from "./render/format.js";
 import { TokenSpeedTracker } from "./token-speed.js";
 
 // Types
-import type { ProviderUsage } from "./types.js";
+import type { ProviderUsage, ThemeAccess } from "./types.js";
 
 // Providers
 import { fetchCodexUsage, codexToProvider } from "./providers/codex.js";
@@ -42,14 +42,32 @@ import type { GitDirtyResult, GitRemoteResult, GitLastCommit } from "./git.js";
 
 // Render
 import { renderHeader } from "./render/header.js";
-import { renderFooter } from "./render/footer.js";
+import { renderFooterLine } from "./render/footer.js";
+import { renderShelf } from "./render/shelf.js";
+import { BLOCK_DESCRIPTIONS, KNOWN_BLOCKS, type BlockContext } from "./render/blocks.js";
 import { initSessionTotals, accumulateMessage } from "./render/context.js";
 import {
 	setActivePalette,
 	PALETTE_NAMES,
 	getActivePaletteName,
+	getActivePalette,
 } from "./render/header.js";
 import { setAsciiMode, isAsciiMode } from "./render/format.js";
+
+// Layout config + mascot sprite
+import {
+	loadLayout,
+	layoutPath,
+	validateLayoutFile,
+	type HudLayout,
+	type LayoutValidationIssue,
+} from "./config.js";
+import {
+	collectDoctorProbes,
+	formatDoctorReport,
+	type DoctorProviderSnapshot,
+} from "./diagnostics.js";
+import type { Mood } from "./sprite.js";
 
 // --- Constants ---
 const QUOTA_REFRESH_MS = 60_000;
@@ -58,6 +76,30 @@ const TPS_RENDER_THROTTLE_MS = 250;
 
 // --- Provider helpers ---
 
+// Stable hash for change detection: every provider stamps `updatedAt: Date.now()`
+// on refresh regardless of whether the underlying user-visible usage changed.
+// Provider mappers build objects in deterministic field order; if that changes,
+// switch this to a sorted-key serializer to avoid spurious render churn.
+export function stableUsageKey(u: ProviderUsage): string {
+	const { updatedAt: _updatedAt, ...rest } = u;
+	return JSON.stringify(rest);
+}
+
+function formatHudBlocks(): string {
+	const lines = [
+		"Available HUD blocks:",
+		...KNOWN_BLOCKS.map((id) => `- ${id}: ${BLOCK_DESCRIPTIONS[id]}`),
+		`- ext:<key>: ${BLOCK_DESCRIPTIONS["ext:<key>"]}`,
+		`Layout: ${layoutPath()}`,
+	];
+	return lines.join("\n");
+}
+
+function formatLayoutValidationIssues(issues: LayoutValidationIssue[]): string {
+	const shown = issues.slice(0, 10).map((issue) => `- ${issue.path}: ${issue.message}`);
+	const hidden = issues.length - shown.length;
+	return hidden > 0 ? `${shown.join("\n")}\n... ${hidden} more` : shown.join("\n");
+}
 // --- Main extension ---
 export default function piHud(pi: ExtensionAPI) {
 	let enabled = true;
@@ -68,16 +110,6 @@ export default function piHud(pi: ExtensionAPI) {
 	let lastAssistantStart: number | null = null;
 	const tokenSpeed = new TokenSpeedTracker();
 	let lastTpsRenderAt = 0;
-
-	// Hint mode — controls footer line 4 (cycling hint).
-	//   cycle = rotate every 5s (HINTS array, via nextHint cache TTL)
-	//   once  = show until first user message of session, then omit
-	//   off   = never show
-	// Default "once" matches the design goal: hint visible briefly at session
-	// start (welcome / feature discovery), then out of the way for the rest
-	// of the session. Change with /hud hint cycle|once|off.
-	let hintMode: "cycle" | "once" | "off" = "once";
-	let firstUserMessageSeen = false;
 
 	// Provider usage state
 	let codexUsage: ProviderUsage = {
@@ -162,7 +194,22 @@ export default function piHud(pi: ExtensionAPI) {
 
 	// HUD UI handle for event-driven re-renders
 	let footerTui: { requestRender: () => void } | null = null;
+	let shelfTui: { requestRender: () => void } | null = null;
 	let wallClockTimer: ReturnType<typeof setInterval> | null = null;
+
+	// Layout config + mascot mood (shared by footer + shelf).
+	const initialLayout = loadLayout();
+	let layout: HudLayout = initialLayout.layout;
+	let mood: Mood = "idle";
+	// Footer-only data (git branch + extension statuses) cached for the shelf,
+	// which renders without a FooterDataProvider.
+	let cachedBranch = "";
+	let cachedExtStatuses: ReadonlyMap<string, string> = new Map<string, string>();
+
+	const requestRenderAll = (): void => {
+		footerTui?.requestRender();
+		shelfTui?.requestRender();
+	};
 
 	const unsupportedUsage = (provider?: string): ProviderUsage => ({
 		id: "unsupported",
@@ -194,16 +241,37 @@ export default function piHud(pi: ExtensionAPI) {
 		}
 	};
 
-	// Stable hash for change detection: every provider stamps `updatedAt: Date.now()`
-	// on every refresh regardless of whether the underlying usage values changed.
-	// Including it in the JSON comparison made the "did data change?" check always
-	// true, causing pi-hud to call tui.requestRender() on every quota tick — which
-	// snaps the user's terminal scrollback back to the bottom. Compare on the
-	// user-visible subset only.
-	const stableUsageKey = (u: ProviderUsage): string => {
-		const { updatedAt: _updatedAt, ...rest } = u;
-		return JSON.stringify(rest);
-	};
+	const buildDoctorProviders = (): DoctorProviderSnapshot[] => [
+		{ name: "Codex", usage: codexUsage, inFlight: codexInFlight !== null },
+		{ name: "Anthropic", usage: anthropicUsage, inFlight: anthropicInFlight !== null },
+		{ name: "Ollama", usage: ollamaUsage, inFlight: ollamaInFlight !== null },
+		{ name: "OpenCode", usage: opencodeUsage, inFlight: opencodeInFlight !== null },
+		{ name: "MiniMax", usage: minimaxUsage, inFlight: minimaxInFlight !== null },
+		{ name: "Umans", usage: umansUsage, inFlight: umansInFlight !== null },
+		{ name: "Z.AI", usage: zaiUsage, inFlight: zaiInFlight !== null },
+	];
+
+	/** Assemble the shared live data both the footer and shelf render from. */
+	const buildBlockContext = (
+		activeCtx: ExtensionContext,
+		theme: ThemeAccess,
+	): BlockContext => ({
+		ctx: activeCtx,
+		theme,
+		totals,
+		activeUsage: getActiveUsage(activeCtx),
+		thinkingLevel: pi.getThinkingLevel(),
+		activeStartedAt,
+		lastRunMs,
+		lastTps,
+		gitDirty: cachedGitDirty,
+		gitRemote: cachedGitRemote,
+		gitLastCommit: cachedGitLastCommit,
+		branch: cachedBranch,
+		extStatuses: cachedExtStatuses,
+		palette: getActivePalette(),
+	});
+
 
 	const requestTpsRender = (now = Date.now()): void => {
 		if (now - lastTpsRenderAt < TPS_RENDER_THROTTLE_MS) return;
@@ -335,7 +403,7 @@ export default function piHud(pi: ExtensionAPI) {
 				gitRefreshInProgress = false;
 				// Only re-render if git data actually changed
 				if (changed) {
-					footerTui?.requestRender();
+					requestRenderAll();
 				}
 			})
 			.catch(() => {
@@ -346,16 +414,23 @@ export default function piHud(pi: ExtensionAPI) {
 	// --- Install header + footer ---
 	const install = (ctx: ExtensionContext) => {
 		installedCtx = ctx;
-		if (!enabled || !ctx.hasUI) return;
+		if (!ctx.hasUI) return;
 		void refreshActiveProvider(ctx);
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			footerTui = tui;
-			const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
+			const unsubBranch = footerData.onBranchChange(() => {
+				cachedBranch = footerData.getGitBranch() ?? "";
+				requestRenderAll();
+			});
 
 			// Wall-clock refresh at 30s: quota/git refresh checks + time-based display updates.
 			// Only requestRender() when something actually changed — unconditional re-renders
 			// cause the TUI to scroll the viewport back to the bottom, disrupting reading.
+			if (wallClockTimer !== null) {
+				clearInterval(wallClockTimer);
+				wallClockTimer = null;
+			}
 			wallClockTimer = setInterval(() => {
 				const activeCtx = installedCtx ?? ctx;
 				const activeUsage = getActiveUsage(activeCtx);
@@ -366,7 +441,7 @@ export default function piHud(pi: ExtensionAPI) {
 						const latestCtx = installedCtx ?? activeCtx;
 						const newUsage = stableUsageKey(getActiveUsage(latestCtx));
 						if (newUsage !== prevUsage) {
-							tui.requestRender();
+							requestRenderAll();
 						}
 					});
 				}
@@ -376,8 +451,8 @@ export default function piHud(pi: ExtensionAPI) {
 				}
 				// Re-render when a live timer is active (the ⏱ duration display
 				// updates per-minute via fmtDuration). Quota and git refreshes are
-				// handled by their async callbacks — quota's then() and git's then()
-				// each call requestRender() only when data actually changed.
+				// handled by their async callbacks — quota calls requestRenderAll()
+				// when data actually changed, and git's then() requests a render.
 				// When idle with no data changes, skip re-render entirely.
 				if (activeStartedAt !== null) {
 					tui.requestRender();
@@ -395,30 +470,16 @@ export default function piHud(pi: ExtensionAPI) {
 				},
 				invalidate() {},
 				render(width: number): string[] {
+					if (!enabled) return [];
 					try {
 						const activeCtx = installedCtx ?? ctx;
-						const activeUsage = getActiveUsage(activeCtx);
-						const thinking = pi.getThinkingLevel();
-
-
-						return renderFooter(
-							{
-								ctx: activeCtx,
-								activeUsage,
-								totals,
-								thinkingLevel: thinking,
-								activeStartedAt,
-								lastRunMs,
-								lastTps,
-								gitDirty: cachedGitDirty,
-								gitRemote: cachedGitRemote,
-								gitLastCommit: cachedGitLastCommit,
-								hintMode,
-								firstUserMessageSeen,
-							},
-							theme,
-							footerData,
-						)(width);
+						cachedBranch = footerData.getGitBranch() ?? "";
+						cachedExtStatuses = footerData.getExtensionStatuses();
+						const block = buildBlockContext(
+							activeCtx,
+							theme as unknown as ThemeAccess,
+						);
+						return renderFooterLine(block, layout)(width);
 					} catch (err: any) {
 						return [theme.fg("error", `pi-hud: ${err?.message ?? err}`)];
 					}
@@ -455,6 +516,7 @@ export default function piHud(pi: ExtensionAPI) {
 				const fullTheme = ctx.ui.theme;
 				const editor = new (class extends CustomEditor {
 					render(width: number): string[] {
+						if (!enabled) return super.render(width);
 						const markerWidth = 3; // Fixed column: "▌  " or "↑3 " or "↓12 "
 						const innerWidth = Math.max(1, width - markerWidth);
 
@@ -558,6 +620,7 @@ export default function piHud(pi: ExtensionAPI) {
 
 		ctx.ui.setHeader((_tui, theme) => ({
 			render(width: number): string[] {
+				if (!enabled) return [];
 				try {
 					const activeCtx = installedCtx ?? ctx;
 					const activeUsage = getActiveUsage(activeCtx);
@@ -576,23 +639,77 @@ export default function piHud(pi: ExtensionAPI) {
 			},
 			invalidate() {},
 		}));
+
+		// Mascot + status shelf above the input box. A keyed widget, so it does
+		// not conflict with the editor-component marker column. Renders the mood
+		// sprite (Kitty image when supported, else ASCII) plus the config-driven
+		// shelf rows to its left.
+		ctx.ui.setWidget(
+			"hud-shelf",
+			(tui, theme) => {
+				shelfTui = tui;
+				return {
+					dispose: () => {
+						shelfTui = null;
+					},
+					invalidate() {},
+					render(width: number): string[] {
+						if (!enabled) return [];
+						try {
+							const activeCtx = installedCtx ?? ctx;
+							const block = buildBlockContext(
+								activeCtx,
+								theme as unknown as ThemeAccess,
+							);
+							return renderShelf({ layout, mood, block })(width);
+						} catch (e) {
+							// Never leave the shelf silently blank — surface the error.
+							const msg = e instanceof Error ? e.message : String(e);
+							return [
+								(theme as unknown as ThemeAccess).fg(
+									"error",
+									`pi-hud shelf: ${msg}`.slice(0, Math.max(0, width)),
+								),
+							];
+						}
+					},
+				};
+			},
+			{ placement: "aboveEditor" },
+		);
+
+		if (initialLayout.warning) {
+			ctx.ui.notify(`HUD layout: ${initialLayout.warning}`, "warning");
+		}
 	});
 
 	pi.on("model_select", (_event, ctx) => {
 		installedCtx = ctx;
 		void refreshActiveProvider(ctx);
-		footerTui?.requestRender();
+		requestRenderAll();
 	});
 
 	pi.on("agent_start", () => {
 		activeStartedAt = Date.now();
-		footerTui?.requestRender();
+		mood = "working";
+		requestRenderAll();
 	});
 
 	pi.on("agent_end", () => {
 		if (activeStartedAt) lastRunMs = Date.now() - activeStartedAt;
 		activeStartedAt = null;
-		footerTui?.requestRender();
+		mood = mood === "error" ? "error" : "success";
+		requestRenderAll();
+	});
+
+	pi.on("tool_execution_start", () => {
+		mood = "tool";
+		requestRenderAll();
+	});
+
+	pi.on("tool_execution_end", (event) => {
+		mood = event.isError ? "error" : "working";
+		requestRenderAll();
 	});
 
 	pi.on("message_start", (event) => {
@@ -602,12 +719,6 @@ export default function piHud(pi: ExtensionAPI) {
 			lastTpsRenderAt = 0;
 			tokenSpeed.start(lastAssistantStart);
 			footerTui?.requestRender();
-		}
-		// First user message of the session: flip the flag and trigger one re-render
-		// so the hint disappears from the footer (when hintMode === "once").
-		if (event.message.role === "user" && !firstUserMessageSeen) {
-			firstUserMessageSeen = true;
-			if (hintMode === "once") footerTui?.requestRender();
 		}
 	});
 
@@ -636,7 +747,7 @@ export default function piHud(pi: ExtensionAPI) {
 				? snapshot.averageTps
 				: lastTps;
 		lastAssistantStart = null;
-		footerTui?.requestRender();
+		requestRenderAll();
 	});
 
 	pi.on("turn_end", () => {
@@ -648,6 +759,8 @@ export default function piHud(pi: ExtensionAPI) {
 	pi.on("session_shutdown", (_event, ctx) => {
 		ctx.ui.setFooter(undefined);
 		ctx.ui.setHeader(undefined);
+		ctx.ui.setWidget("hud-shelf", undefined);
+		shelfTui = null;
 		if (wallClockTimer !== null) {
 			clearInterval(wallClockTimer);
 			wallClockTimer = null;
@@ -656,8 +769,6 @@ export default function piHud(pi: ExtensionAPI) {
 		installedCtx = null;
 		// Reset cached totals for new session
 		totals = initSessionTotals();
-		// Reset first-message tracking for the next session
-		firstUserMessageSeen = false;
 		lastTps = null;
 		lastAssistantStart = null;
 		lastTpsRenderAt = 0;
@@ -694,30 +805,94 @@ export default function piHud(pi: ExtensionAPI) {
 
 	pi.registerCommand("hud", {
 		description:
-			"Manage the HUD: /hud on|off|refresh|status|theme [name]|ascii|hint [cycle|once|off]",
+			"Manage the HUD: /hud on|off|refresh|reload|layout|blocks|validate|doctor|status|theme [name]|ascii",
 		handler: async (args, ctx) => {
 			const arg = (args ?? "").trim().toLowerCase();
 
 			// --- on / off ---
 			if (arg === "off") {
 				enabled = false;
-				ctx.ui.setFooter(undefined);
-				ctx.ui.setHeader(undefined);
+				requestRenderAll();
 				ctx.ui.notify("HUD disabled", "warning");
 				return;
 			}
 			if (arg === "on") {
 				enabled = true;
-				install(ctx);
+				requestRenderAll();
 				ctx.ui.notify("HUD enabled", "info");
 				return;
 			}
 
 			// --- refresh ---
 			if (arg === "refresh") {
-				await refreshActiveProvider(ctx);
-				if (installedCtx) install(installedCtx);
+				const activeCtx = installedCtx ?? ctx;
+				await refreshActiveProvider(activeCtx);
+				requestRenderAll();
 				ctx.ui.notify("HUD refreshed", "info");
+				return;
+			}
+
+			// --- reload layout config ---
+			if (arg === "reload") {
+				const res = loadLayout();
+				layout = res.layout;
+				requestRenderAll();
+				if (res.warning) {
+					ctx.ui.notify(res.warning, "warning");
+					return;
+				}
+				if (res.warnings && res.warnings.length > 0) {
+					ctx.ui.notify(
+						`HUD layout reloaded with warnings\n${formatLayoutValidationIssues(res.warnings)}`,
+						"warning",
+					);
+					return;
+				}
+				ctx.ui.notify("HUD layout reloaded", "info");
+				return;
+			}
+			if (arg === "layout") {
+				ctx.ui.notify(`HUD layout config: ${layoutPath()}`, "info");
+				return;
+			}
+
+			if (arg === "blocks") {
+				ctx.ui.notify(formatHudBlocks(), "info");
+				return;
+			}
+
+			if (arg === "validate") {
+				const result = validateLayoutFile();
+				if (result.issues.length === 0) {
+					ctx.ui.notify(`HUD layout valid\n${result.path}`, "info");
+					return;
+				}
+				ctx.ui.notify(
+					`HUD layout warnings (${result.path})\n${formatLayoutValidationIssues(result.issues)}`,
+					"warning",
+				);
+				return;
+			}
+
+			if (arg === "doctor") {
+				const validation = validateLayoutFile();
+				ctx.ui.notify(
+					formatDoctorReport({
+						ctx,
+						layoutPath: validation.path,
+						layout,
+						layoutWarnings: validation.issues,
+						asciiMode: isAsciiMode(),
+						surfaces: {
+							footer: footerTui !== null,
+							shelf: shelfTui !== null,
+							wallClockTimer: wallClockTimer !== null,
+						},
+						probes: collectDoctorProbes(),
+						providers: buildDoctorProviders(),
+					}),
+					"info",
+				);
 				return;
 			}
 
@@ -752,31 +927,8 @@ export default function piHud(pi: ExtensionAPI) {
 			if (arg === "ascii") {
 				const current = isAsciiMode();
 				setAsciiMode(!current);
+				requestRenderAll();
 				ctx.ui.notify(`HUD ASCII mode: ${!current ? "ON" : "OFF"}`, "info");
-				if (installedCtx) install(installedCtx);
-				return;
-			}
-
-			// --- hint mode ---
-			if (arg.startsWith("hint")) {
-				const mode = arg.slice(4).trim();
-				if (!mode) {
-					ctx.ui.notify(
-						`HUD hint mode: ${hintMode} (cycle | once | off)`,
-						"info",
-					);
-					return;
-				}
-				if (mode !== "cycle" && mode !== "once" && mode !== "off") {
-					ctx.ui.notify(
-						`Unknown hint mode "${mode}". Use: cycle | once | off`,
-						"error",
-					);
-					return;
-				}
-				hintMode = mode;
-				footerTui?.requestRender();
-				ctx.ui.notify(`HUD hint mode: ${mode}`, "info");
 				return;
 			}
 

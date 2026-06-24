@@ -1,4 +1,5 @@
 .pi/todos/
+.pi/tmp/
 .DS_Store
 AGENTS.md
 node_modules/

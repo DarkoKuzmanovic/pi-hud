@@ -24,9 +24,13 @@
   ],
   "files": [
     "index.ts",
+    "diagnostics.ts",
     "types.ts",
     "git.ts",
     "cookies.ts",
+    "config.ts",
+    "sprite.ts",
+    "assets/**/*.png",
     "provider-routing.ts",
     "token-speed.ts",
     "tsconfig.json",

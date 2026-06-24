@@ -3,7 +3,7 @@ import { fmtInt, ICON_CTX } from "./format.js";
 
 export function formatContext(ctx: ExtensionContext): string {
 	const usage = ctx.getContextUsage();
-	if (!usage) return "ctx n/a";
+	if (!usage || usage.tokens == null) return "ctx n/a";
 	const pct = usage.contextWindow ? ` ${Math.round((usage.tokens / usage.contextWindow) * 100)}%` : "";
 	return `${ICON_CTX()} ${fmtInt(usage.tokens)}${usage.contextWindow ? `/${fmtInt(usage.contextWindow)}` : ""}${pct}`;
 }
