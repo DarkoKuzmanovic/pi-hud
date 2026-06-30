@@ -7,3 +7,6 @@ package-lock.json
 .pi-lens/
 .codegraph/
 .plans/
+progress.md
+.pi/context.md
+.pi/meta-prompt.md

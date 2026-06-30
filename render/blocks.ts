@@ -33,8 +33,6 @@ const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 
 /** Extension-status keys pi-hud never surfaces as a generic chip. */
 export const HIDDEN_STATUSES = new Set([
-	"claude-oauth-ready",
-	"claude-oauth-issue",
 	"ultrathink",
 ]);
 
@@ -54,6 +52,15 @@ export interface BlockContext {
 	branch: string;
 	extStatuses: ReadonlyMap<string, string>;
 	palette?: [number, number, number][];
+	separator?: string;
+	/**
+	 * Block ids the renderer should treat as chip-wrapped. When omitted (e.g. in
+	 * tests) every block renders plain. Populated by `buildBlockContext()` from
+	 * `layout.chips`. Centralizing the chip decision here means individual block
+	 * renderers no longer hardcode chip styling — the choice is driven entirely
+	 * by the layout config.
+	 */
+	chips?: ReadonlySet<string>;
 }
 
 function cleanExtStatus(value: string, theme: ThemeAccess): string {
@@ -92,6 +99,7 @@ export const KNOWN_BLOCKS = [
 	"commit",
 	"sync",
 	"sessionId",
+	"sessionName",
 	"quota",
 	"extStatuses",
 ] as const;
@@ -115,79 +123,160 @@ export const BLOCK_DESCRIPTIONS: Record<KnownBlockId | "ext:<key>", string> = {
 	commit: "Last commit hash, subject, and age.",
 	sync: "Git remote sync status, including ahead/behind counts.",
 	sessionId: "Current Pi session id.",
+	sessionName: "Current Pi session display name, when set with /name or --name.",
 	quota: "Active provider quota and usage windows.",
 	extStatuses: "All visible extension statuses collected from Pi.",
 	"ext:<key>": "One specific extension status by key, for example ext:tps.",
 };
 
-const BLOCKS: Record<KnownBlockId, BlockFn> = {
-	project: (c) => chip(`${ICON_PROJECT()} `, c.theme),
-	folder: (c) =>
-		dimChip(`${ICON_FOLDER()} ${basename(c.ctx.cwd) || c.ctx.cwd}`, c.theme),
-	model: (c) =>
-		dimChip(
+/**
+ * Per-block render spec. `plain` is the always-rendered base text; `chip` is
+ * the chip-styled variant used when the block id is in `c.chips`. When `chip`
+ * is null, the central renderer falls back to `dimChip(plain(...), theme)` so
+ * opt-in chip wrapping still works for blocks that have no bespoke style.
+ */
+interface BlockSpec {
+	plain: BlockFn;
+	/** When null, the central renderer wraps the plain output in `dimChip`. */
+	chip: BlockFn | null;
+}
+
+const BLOCKS: Record<KnownBlockId, BlockSpec> = {
+	project: {
+		plain: (c) => `${ICON_PROJECT()} `,
+		chip: (c) => chip(`${ICON_PROJECT()} `, c.theme),
+	},
+	folder: {
+		plain: (c) => `${ICON_FOLDER()} ${basename(c.ctx.cwd) || c.ctx.cwd}`,
+		chip: (c) => dimChip(`${ICON_FOLDER()} ${basename(c.ctx.cwd) || c.ctx.cwd}`, c.theme),
+	},
+	model: {
+		plain: (c) =>
 			`${ICON_MODEL()} ${c.ctx.model ? compactModelName(c.ctx.model.id) : "no model"}`,
-			c.theme,
-		),
-	thinking: (c) => thinkingChip(c.thinkingLevel, c.theme),
-	context: (c) => dimChip(formatContext(c.ctx), c.theme),
-	statusDot: (c) => statusDot(c.activeUsage.status, c.theme),
-
-	tokens: (c) =>
-		c.totals.input > 0 || c.totals.output > 0
-			? `↑${fmtInt(c.totals.input)} ↓${fmtInt(c.totals.output)}`
-			: "",
-	cost: (c) => costStr(c.totals.cost),
-
-	runDuration: (c) =>
-		c.activeStartedAt
-			? `${RUN_ICON} ${fmtDuration(Date.now() - c.activeStartedAt)}`
-			: c.lastRunMs
-				? `${RUN_ICON} ${fmtDuration(c.lastRunMs)}`
-				: `${RUN_ICON} idle`,
-	speed: (c) => (c.lastTps ? `${SPEED_ICON} ${c.lastTps.toFixed(1)} tok/s` : ""),
-
-	cwd: (c) => `${ICON_CWD()} ${c.theme.fg("dim", compactPath(c.ctx.cwd))}`,
-	branch: (c) =>
-		c.branch ? `${c.theme.fg("muted", ICON_BRANCH())} ${c.branch}` : "",
-	dirty: (c) =>
-		c.gitDirty.text
-			? c.theme.fg(c.gitDirty.isClean ? "success" : "warning", c.gitDirty.text)
-			: "",
-	commit: (c) =>
-		c.gitLastCommit.hash
-			? `${c.theme.fg("muted", c.gitLastCommit.hash)} ${truncateToWidth(c.gitLastCommit.subject, 36, "…")} ${c.theme.fg("dim", c.gitLastCommit.age)}`
-			: "",
-	sync: (c) => {
-		if (!c.gitRemote.hasRemote) return "";
-		if (c.gitRemote.ahead === 0 && c.gitRemote.behind === 0) {
-			return c.theme.fg("success", "✓ synced");
-		}
-		const parts: string[] = [];
-		if (c.gitRemote.ahead > 0) parts.push(c.theme.fg("warning", `↑${c.gitRemote.ahead}`));
-		if (c.gitRemote.behind > 0) parts.push(c.theme.fg("error", `↓${c.gitRemote.behind}`));
-		return parts.join(" ");
+		chip: (c) =>
+			dimChip(
+				`${ICON_MODEL()} ${c.ctx.model ? compactModelName(c.ctx.model.id) : "no model"}`,
+				c.theme,
+			),
+	},
+	thinking: {
+		plain: (c) => c.thinkingLevel,
+		chip: (c) => thinkingChip(c.thinkingLevel, c.theme),
+	},
+	context: {
+		plain: (c) => formatContext(c.ctx),
+		chip: (c) => dimChip(formatContext(c.ctx), c.theme),
+	},
+	statusDot: {
+		plain: (c) => statusDot(c.activeUsage.status, c.theme),
+		chip: null,
 	},
 
-	sessionId: (c) => {
-		const id = c.ctx.sessionManager.getSessionId();
-		return id ? c.theme.fg("muted", `${SESSION_ICON} ${id}`) : "";
+	tokens: {
+		plain: (c) =>
+			c.totals.input > 0 || c.totals.output > 0
+				? `↑${fmtInt(c.totals.input)} ↓${fmtInt(c.totals.output)}`
+				: "",
+		chip: null,
+	},
+	cost: {
+		plain: (c) => costStr(c.totals.cost),
+		chip: null,
 	},
 
-	quota: (c) =>
-		c.activeUsage.id === "unsupported"
-			? ""
-			: renderProviderUsage(c.activeUsage, c.theme, c.palette),
+	runDuration: {
+		plain: (c) =>
+			c.activeStartedAt
+				? `${RUN_ICON} ${fmtDuration(Date.now() - c.activeStartedAt)}`
+				: c.lastRunMs
+					? `${RUN_ICON} ${fmtDuration(c.lastRunMs)}`
+					: `${RUN_ICON} idle`,
+		chip: null,
+	},
+	speed: {
+		plain: (c) => (c.lastTps ? `${SPEED_ICON} ${c.lastTps.toFixed(1)} tok/s` : ""),
+		chip: null,
+	},
 
-	extStatuses: (c) => {
-		const sep = c.theme.fg("dim", " │ ");
-		return [...c.extStatuses.entries()]
-			.filter(([key, val]) => !HIDDEN_STATUSES.has(key) && Boolean(val))
-			.map(([, val]) => cleanExtStatus(val, c.theme))
-			.filter(Boolean)
-			.join(sep)
-			.replace(/\u00b7/g, c.theme.fg("dim", "│"))
-			.replace(/\u2022/g, c.theme.fg("dim", "│"));
+	cwd: {
+		plain: (c) => `${ICON_CWD()} ${c.theme.fg("dim", compactPath(c.ctx.cwd))}`,
+		chip: null,
+	},
+	branch: {
+		plain: (c) =>
+			c.branch ? `${c.theme.fg("muted", ICON_BRANCH())} ${c.branch}` : "",
+		chip: null,
+	},
+	dirty: {
+		plain: (c) =>
+			c.gitDirty.text
+				? c.theme.fg(c.gitDirty.isClean ? "success" : "warning", c.gitDirty.text)
+				: "",
+		chip: null,
+	},
+	commit: {
+		plain: (c) =>
+			c.gitLastCommit.hash
+				? `${c.theme.fg("muted", c.gitLastCommit.hash)} ${truncateToWidth(c.gitLastCommit.subject, 36, "…")} ${c.theme.fg("dim", c.gitLastCommit.age)}`
+				: "",
+		chip: null,
+	},
+	sync: {
+		plain: (c) => {
+			if (!c.gitRemote.hasRemote) return "";
+			if (c.gitRemote.ahead === 0 && c.gitRemote.behind === 0) {
+				return c.theme.fg("success", "✓ synced");
+			}
+			const parts: string[] = [];
+			if (c.gitRemote.ahead > 0) parts.push(c.theme.fg("warning", `↑${c.gitRemote.ahead}`));
+			if (c.gitRemote.behind > 0) parts.push(c.theme.fg("error", `↓${c.gitRemote.behind}`));
+			return parts.join(" ");
+		},
+		chip: null,
+	},
+
+	sessionId: {
+		plain: (c) => {
+			const id = c.ctx.sessionManager.getSessionId();
+			return id ? c.theme.fg("muted", `${SESSION_ICON} ${id}`) : "";
+		},
+		chip: null,
+	},
+	sessionName: {
+		plain: (c) => {
+			const name = c.ctx.sessionManager.getSessionName?.() ?? "";
+			const trimmed = name.trim();
+			return trimmed
+				? c.theme.fg("muted", `${SESSION_ICON} ${truncateToWidth(trimmed, 36, "…")}`)
+				: "";
+		},
+		chip: null,
+	},
+
+	quota: {
+		plain: (c) =>
+			c.activeUsage.id === "unsupported"
+				? ""
+				: renderProviderUsage(c.activeUsage, c.theme, c.palette, { plainProviderBadge: true }),
+		chip: (c) =>
+			c.activeUsage.id === "unsupported"
+				? ""
+				: renderProviderUsage(c.activeUsage, c.theme, c.palette),
+	},
+
+	extStatuses: {
+		plain: (c) => {
+			const rawSep = c.separator ?? " · ";
+			const sep = c.theme.fg("dim", rawSep);
+			const inline = c.theme.fg("dim", rawSep.trim() || "·");
+			return [...c.extStatuses.entries()]
+				.filter(([key, val]) => !HIDDEN_STATUSES.has(key) && Boolean(val))
+				.map(([, val]) => cleanExtStatus(val, c.theme))
+				.filter(Boolean)
+				.map((s) => s.replace(/\u00b7/g, inline).replace(/\u2022/g, inline))
+				.join(sep);
+		},
+		chip: null,
 	},
 };
 
@@ -195,17 +284,31 @@ const BLOCKS: Record<KnownBlockId, BlockFn> = {
 export function renderBlock(id: string, c: BlockContext): string {
 	if (id.startsWith("ext:")) {
 		const key = id.slice(4);
-		const val = c.extStatuses.get(key);
+		const val = c.extStatuses?.get(key);
 		return val ? cleanExtStatus(val, c.theme) : "";
 	}
-	const fn = BLOCKS[id];
-	if (!fn) return "";
+	const spec = BLOCKS[id];
+	if (!spec) return "";
+	const wantChip = c.chips instanceof Set && c.chips.has(id);
+	const fn = wantChip && spec.chip ? spec.chip : spec.plain;
+	let result: string;
 	try {
-		return fn(c);
+		result = fn(c);
 	} catch {
 		return "";
 	}
+	const visibleResult = result.replace(ANSI_PATTERN, "");
+	// Empty/whitespace output: never emit chip brackets around nothing.
+	if (!visibleResult?.trim()) return "";
+	// Default chip wrap for blocks without a bespoke chip variant. Strip nested
+	// ANSI styling first: foreground colors inside inverse chips change the
+	// apparent chip background, producing split-color chip bodies.
+	if (wantChip && !spec.chip) {
+		return dimChip(visibleResult, c.theme);
+	}
+	return result;
 }
+
 
 /** Render a list of block ids, dropping empties, joined by `separator`. */
 export function renderGroup(ids: string[], c: BlockContext, separator: string): string {

@@ -221,14 +221,23 @@ export function renderWindow(window: UsageWindow, theme: ThemeAccess): string {
 	return `${theme.fg("muted", `${label}:`)} ${value}${theme.fg("dim", reset)}`;
 }
 
+export interface RenderProviderUsageOptions {
+	/** When true, render the provider badge as plain text instead of chip-wrapped. */
+	plainProviderBadge?: boolean;
+}
+
 export function renderProviderUsage(
 	provider: ProviderUsage,
 	theme: ThemeAccess,
 	palette?: [number, number, number][],
+	options: RenderProviderUsageOptions = {},
 ): string {
-	const providerChip = palette
-	? paletteChip(`${provider.icon}  ${provider.name}`, palette[0], theme)
-	: chip(`${provider.icon}  ${provider.name}`, theme);
+	const label = `${provider.icon}  ${provider.name}`;
+	const providerChip = options.plainProviderBadge
+		? label
+		: palette
+			? paletteChip(label, palette[0], theme)
+			: chip(label, theme);
 	const windows = provider.windows
 		.map((w) => renderWindow(w, theme))
 		.join(theme.fg("dim", "  "));

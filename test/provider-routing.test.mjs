@@ -41,9 +41,6 @@ test("active provider routing maps supported provider aliases explicitly", async
     assert.equal(resolveProviderId("minimax-cn"), "minimax");
     assert.equal(resolveProviderId("openai-codex"), "codex");
     assert.equal(resolveProviderId("codex"), "codex");
-    assert.equal(resolveProviderId("zai"), "zai");
-    assert.equal(resolveProviderId("z.ai"), "zai");
-    assert.equal(resolveProviderId("z-ai"), "zai");
     assert.equal(resolveProviderId("mimo"), undefined);
   } finally {
     rmSync(buildDir, { recursive: true, force: true });

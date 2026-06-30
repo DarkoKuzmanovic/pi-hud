@@ -67,17 +67,6 @@ export function readUmansAuth(): { access: string } | null {
 	return null;
 }
 
-export function readZaiAuth(): { access: string } | null {
-	const cred = readAuth().zai;
-	if (cred?.type === "api_key" && typeof cred.key === "string")
-		return { access: cred.key };
-	if (cred?.type === "oauth" && typeof cred.access === "string")
-		return { access: cred.access };
-	const env = process.env.ZAI_API_KEY;
-	if (env) return { access: env };
-	return null;
-}
-
 // --- Shared fetch helper ---
 
 export interface FetchOptions {

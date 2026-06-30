@@ -4,11 +4,8 @@ export type WindowLabel = "5h" | "week" | "month" | "daily";
 export type ProviderId =
 	| "codex"
 	| "anthropic"
-	| "ollama-cloud"
-	| "opencode"
 	| "minimax"
 	| "umans"
-	| "zai"
 	| "unsupported";
 export type ProviderStatus = "ok" | "unknown" | "auth-needed" | "error";
 
@@ -84,52 +81,6 @@ export interface AnthropicFetchResult {
 	message?: string;
 	/** Timestamp the underlying data was originally fetched at — only set when result comes from disk cache. */
 	fetchedAt?: number;
-}
-
-export interface OllamaUsageData {
-	sessionPercent: number;
-	weeklyPercent: number;
-	sessionResetAt: number;
-	weeklyResetAt: number;
-}
-
-export interface OllamaFetchResult {
-	usage: OllamaUsageData | null;
-	status: ProviderStatus;
-	message?: string;
-}
-
-export interface ZaiUsageData {
-	/** 5-hour rolling window. */
-	fiveHourPercent?: number;
-	fiveHourUsedTokens?: number;
-	fiveHourLimitTokens?: number;
-	fiveHourResetAt?: number;
-	/** Weekly quota + 7-day raw token count. */
-	sevenDayPercent?: number;
-	sevenDayResetAt?: number;
-	sevenDayTokens?: number;
-}
-
-export interface ZaiFetchResult {
-	usage: ZaiUsageData | null;
-	status: ProviderStatus;
-	message?: string;
-}
-
-export interface OpenCodeUsageData {
-	rollingPercent: number;
-	rollingResetAt: number;
-	weeklyPercent: number;
-	weeklyResetAt: number;
-	monthlyPercent: number;
-	monthlyResetAt: number;
-}
-
-export interface OpenCodeFetchResult {
-	usage: OpenCodeUsageData | null;
-	status: ProviderStatus;
-	message?: string;
 }
 
 export interface MinimaxTokenPlanRemain {
