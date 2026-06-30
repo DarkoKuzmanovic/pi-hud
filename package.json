@@ -27,8 +27,6 @@
     "types.ts",
     "git.ts",
     "config.ts",
-    "sprite.ts",
-    "assets/**/*.png",
     "provider-routing.ts",
     "token-speed.ts",
     "tsconfig.json",

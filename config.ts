@@ -1,9 +1,9 @@
 // pi-hud layout config.
 //
-// The HUD's two surfaces — the status SHELF (rows shown left of the mascot,
-// above the input box) and the single-line FOOTER (below the input box) — are
-// described declaratively here so the layout can be rearranged by editing a
-// file instead of changing code.
+// The HUD's single configurable surface — the FOOTER below the input box,
+// a main line plus optional full-width extra rows — is described
+// declaratively here so the layout can be rearranged by editing a file
+// instead of changing code.
 //
 // File location: ~/.pi/agent/pi-hud.layout.jsonc (created with defaults on first
 // run). Reload at runtime with `/hud reload`.
@@ -18,24 +18,6 @@ import { KNOWN_BLOCKS } from "./render/blocks.js";
 /** A block id, optionally an extension-status key as `ext:<key>`. */
 export type BlockId = string;
 
-export type MascotId = "teal-ghost" | "cute-robot";
-
-export interface SpriteConfig {
-	enabled: boolean;
-	/** "auto" = Kitty image when supported, else ASCII. "ascii" = force ASCII art. "off" = no sprite. */
-	mode: "auto" | "ascii" | "off";
-	/** Art style for the sprite. */
-	mascot: MascotId;
-	widthCells: number;
-	heightCells: number;
-}
-
-export interface ShelfConfig {
-	enabled: boolean;
-	/** Each inner array is one shelf row; entries are block ids joined by `separator`. */
-	rows: BlockId[][];
-}
-
 export interface FooterConfig {
 	enabled: boolean;
 	/** Left-aligned block ids. */
@@ -47,11 +29,11 @@ export interface FooterConfig {
 }
 
 export interface HudLayout {
-	/** Joins blocks within a shelf row or a footer side. */
+	/** Joins blocks within a footer side or extra row. */
 	separator: string;
-	sprite: SpriteConfig;
-	shelf: ShelfConfig;
 	footer: FooterConfig;
+	/** Block ids rendered with chip-style brackets at render time. Defaults to `DEFAULT_CHIPS`. */
+	chips: BlockId[];
 }
 
 export interface LayoutValidationIssue {
@@ -67,61 +49,54 @@ export interface ValidateLayoutFileResult {
 
 // --- Defaults -------------------------------------------------------------
 
+/**
+ * Block ids rendered with chip-style formatting by default. Mirrors the set of
+ * blocks that have historically been pre-styled with chip brackets.
+ */
+export const DEFAULT_CHIPS: BlockId[] = [
+	"project",
+	"folder",
+	"model",
+	"thinking",
+	"context",
+	"quota",
+];
+
 export const DEFAULT_LAYOUT: HudLayout = {
 	separator: " · ",
-	sprite: { enabled: true, mode: "auto", mascot: "teal-ghost", widthCells: 10, heightCells: 5 },
-	shelf: {
-		enabled: true,
-		rows: [
-			["tokens", "cost"],
-			["branch", "dirty", "commit", "sync"],
-		],
-	},
 	footer: {
 		enabled: true,
 		left: ["cwd", "model", "thinking", "context"],
 		right: ["quota", "speed"],
-		extraRows: [["extStatuses"]],
+		extraRows: [
+			["tokens", "cost"],
+			["branch", "dirty", "commit", "sync"],
+			["extStatuses"],
+		],
 	},
+	chips: [...DEFAULT_CHIPS],
 };
 
 /** The on-disk default template, with comments documenting every knob. */
 const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart Pi) to apply.
+// Run /hud blocks for descriptions, /hud validate to check, and /hud layout to show this path.
 //
 // Available blocks:
 //   project      pi identity chip            sessionId   session uuid (dim)
-//   folder       📂 folder name              quota       provider usage windows
-//   model        🤖 active model             speed       tok/s
-//   thinking     thinking-level chip         statusDot   provider status dot
-//   context      context-window usage        runDuration ⏱ run/idle duration
-//   tokens       ↑in ↓out                    cwd         compact working dir
-//   cost         $ spend                     extStatuses all other extensions' statuses
-//   branch       git branch                  ext:<key>   one extension status by key
-//   dirty        git dirty count             commit      last commit (hash subj age)
-//   sync         ✓ synced / ahead-behind
+//   sessionName  /name display name          quota       provider usage windows
+//   folder       📂 folder name              speed       tok/s
+//   model        🤖 active model             statusDot   provider status dot
+//   thinking     thinking-level chip         runDuration ⏱ run/idle duration
+//   context      context-window usage        cwd         compact working dir
+//   tokens       ↑in ↓out                    extStatuses all other extensions' statuses
+//   cost         $ spend                     ext:<key>   one extension status by key
+//   branch       git branch                  commit      last commit (hash subj age)
+//   dirty        git dirty count             sync        ✓ synced / ahead-behind
 //
-// Reorder/move blocks freely between shelf rows and footer sides.
+// Reorder/move blocks freely within footer.left, footer.right, or footer.extraRows.
 {
-  // Separator drawn between blocks in a shelf row or footer side.
+  // Separator drawn between blocks in a footer side or extra row.
   "separator": " · ",
-
-  // The mascot sprite, right of the shelf, above the input box.
-  "sprite": {
-    "enabled": true,
-    "mode": "auto",        // "auto" | "ascii" | "off"
-    "mascot": "teal-ghost", // "teal-ghost" | "cute-robot"
-    "widthCells": 10,
-    "heightCells": 5
-  },
-
-  // Status shelf: each row is a list of blocks, shown left of the sprite.
-  "shelf": {
-    "enabled": true,
-    "rows": [
-      ["tokens", "cost"],
-      ["branch", "dirty", "commit", "sync"]
-    ]
-  },
 
   // Main footer line below the input box, plus optional full-width rows below it.
   "footer": {
@@ -129,9 +104,20 @@ const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart 
     "left": ["cwd", "model", "thinking", "context"],
     "right": ["quota", "speed"],
     "extraRows": [
+      ["tokens", "cost"],
+      ["branch", "dirty", "commit", "sync"],
       ["extStatuses"]
     ]
-  }
+  },
+
+  // Block ids rendered with chip-style brackets (Powerline brackets + inverse
+  // background). Omit this field to keep the default chip set
+  // (project, folder, model, thinking, context, quota); set to [] to disable
+  // chip styling entirely; any explicit list replaces the defaults. Each entry
+  // is a block id — \`ext:<key>\` is also accepted as long as the referenced
+  // extension status is registered. Example for chipping plain blocks:
+  //   "chips": ["tokens", "cost", "branch", "dirty", "speed"]
+  "chips": ["project", "folder", "model", "thinking", "context", "quota"]
 }
 `;
 
@@ -201,8 +187,6 @@ function isStringArray(v: unknown): v is string[] {
 }
 
 const KNOWN_BLOCK_SET = new Set<string>(KNOWN_BLOCKS);
-const SPRITE_MODES = new Set(["auto", "ascii", "off"]);
-const MASCOTS = new Set(["teal-ghost", "cute-robot"]);
 
 function isRecord(v: unknown): v is Record<string, unknown> {
 	return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -272,16 +256,6 @@ function validateBlockRows(
 	});
 }
 
-function validatePositiveNumber(
-	value: unknown,
-	path: string,
-	issues: LayoutValidationIssue[],
-): void {
-	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-		warn(issues, path, "must be a positive number");
-	}
-}
-
 export function validateLayout(raw: unknown): LayoutValidationIssue[] {
 	const issues: LayoutValidationIssue[] = [];
 	if (raw === undefined || raw === null) return issues;
@@ -298,39 +272,23 @@ export function validateLayout(raw: unknown): LayoutValidationIssue[] {
 		}
 	}
 
+	// Legacy keys from the mascot/shelf-widget era (removed). Still tolerated
+	// at load time — mergeLayout() folds "shelf.rows" into footer.extraRows so
+	// upgrading doesn't silently drop previously-visible rows — but flagged
+	// here so /hud validate and /hud reload point at the file to clean up.
 	if ("sprite" in raw) {
-		if (!isRecord(raw.sprite)) {
-			warn(issues, "sprite", "must be an object");
-		} else {
-			const sprite = raw.sprite;
-			if ("enabled" in sprite && typeof sprite.enabled !== "boolean") {
-				warn(issues, "sprite.enabled", "must be a boolean");
-			}
-			if ("mode" in sprite && !SPRITE_MODES.has(String(sprite.mode))) {
-				warn(issues, "sprite.mode", "must be one of auto, ascii, off");
-			}
-			if ("mascot" in sprite && !MASCOTS.has(String(sprite.mascot))) {
-				warn(issues, "sprite.mascot", "must be teal-ghost or cute-robot");
-			}
-			if ("widthCells" in sprite) {
-				validatePositiveNumber(sprite.widthCells, "sprite.widthCells", issues);
-			}
-			if ("heightCells" in sprite) {
-				validatePositiveNumber(sprite.heightCells, "sprite.heightCells", issues);
-			}
-		}
+		warn(
+			issues,
+			"sprite",
+			"the mascot/sprite has been removed; this key is ignored and can be deleted",
+		);
 	}
-
 	if ("shelf" in raw) {
-		if (!isRecord(raw.shelf)) {
-			warn(issues, "shelf", "must be an object");
-		} else {
-			const shelf = raw.shelf;
-			if ("enabled" in shelf && typeof shelf.enabled !== "boolean") {
-				warn(issues, "shelf.enabled", "must be a boolean");
-			}
-			if ("rows" in shelf) validateBlockRows(shelf.rows, "shelf.rows", issues);
-		}
+		warn(
+			issues,
+			"shelf",
+			"the above-editor shelf has been removed; shelf.rows are now folded into footer.extraRows automatically. Move them there manually and delete this key",
+		);
 	}
 
 	if ("footer" in raw) {
@@ -349,6 +307,10 @@ export function validateLayout(raw: unknown): LayoutValidationIssue[] {
 		}
 	}
 
+	if ("chips" in raw) {
+		validateBlockList(raw.chips, "chips", issues);
+	}
+
 	return issues;
 }
 
@@ -360,45 +322,44 @@ export function mergeLayout(raw: unknown): HudLayout {
 
 	if (typeof r.separator === "string" && r.separator.length > 0) base.separator = r.separator;
 
-	const sprite = r.sprite as Record<string, unknown> | undefined;
-	if (sprite && typeof sprite === "object") {
-		if (typeof sprite.enabled === "boolean") base.sprite.enabled = sprite.enabled;
-		if (sprite.mode === "auto" || sprite.mode === "ascii" || sprite.mode === "off") {
-			base.sprite.mode = sprite.mode;
-		}
-		if (sprite.mascot === "teal-ghost" || sprite.mascot === "cute-robot") {
-			base.sprite.mascot = sprite.mascot;
-		}
-		if (typeof sprite.widthCells === "number" && sprite.widthCells > 0) {
-			base.sprite.widthCells = Math.floor(sprite.widthCells);
-		}
-		if (typeof sprite.heightCells === "number" && sprite.heightCells > 0) {
-			base.sprite.heightCells = Math.floor(sprite.heightCells);
-		}
-	}
-
-	const shelf = r.shelf as Record<string, unknown> | undefined;
-	if (shelf && typeof shelf === "object") {
-		if (typeof shelf.enabled === "boolean") base.shelf.enabled = shelf.enabled;
-		if (Array.isArray(shelf.rows) && shelf.rows.every(isStringArray)) {
-			base.shelf.rows = shelf.rows as string[][];
-		}
-	}
-
 	const footer = r.footer as Record<string, unknown> | undefined;
-	let hasExplicitFooterExtraRows = false;
+	let explicitExtraRows: string[][] | null = null;
 	if (footer && typeof footer === "object") {
 		if (typeof footer.enabled === "boolean") base.footer.enabled = footer.enabled;
 		if (isStringArray(footer.left)) base.footer.left = footer.left;
 		if (isStringArray(footer.right)) base.footer.right = footer.right;
 		if (Array.isArray(footer.extraRows) && footer.extraRows.every(isStringArray)) {
-			base.footer.extraRows = footer.extraRows as string[][];
-			hasExplicitFooterExtraRows = true;
+			explicitExtraRows = footer.extraRows as string[][];
 		}
 	}
 
-	if (shelf && typeof shelf === "object" && Array.isArray(shelf.rows) && !hasExplicitFooterExtraRows) {
-		base.footer.extraRows = [];
+	// Legacy migration: pre-rework configs may still have a "shelf.rows" array
+	// (the above-editor shelf has been removed). Fold those rows in front of
+	// whatever footer.extraRows resolves to, so upgrading an old file doesn't
+	// silently drop previously-visible rows. Runtime-only — never rewrites the
+	// file; validateLayout() surfaces a warning pointing at the key to delete.
+	const legacyShelf = r.shelf as Record<string, unknown> | undefined;
+	const legacyShelfRows =
+		legacyShelf &&
+		typeof legacyShelf === "object" &&
+		Array.isArray(legacyShelf.rows) &&
+		legacyShelf.rows.every(isStringArray)
+			? (legacyShelf.rows as string[][])
+			: null;
+
+	if (legacyShelfRows && legacyShelfRows.length > 0) {
+		// Tail is the explicit override if present, else the pre-shelf default
+		// (just extStatuses) — never the new post-removal default, which would
+		// duplicate the rows the legacy shelf already represents.
+		const tail = explicitExtraRows ?? [["extStatuses"]];
+		base.footer.extraRows = [...legacyShelfRows, ...tail];
+	} else if (explicitExtraRows) {
+		base.footer.extraRows = explicitExtraRows;
+	}
+	// else: base.footer.extraRows already holds DEFAULT_LAYOUT's default rows.
+
+	if (isStringArray(r.chips)) {
+		base.chips = [...r.chips];
 	}
 
 	return base;

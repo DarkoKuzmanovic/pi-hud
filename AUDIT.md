@@ -2,6 +2,13 @@
 
 _Audited: 2026-06-28 · commit 90ad1b7 · branch claude/pi-hud-jsonc-setup-nu53q8_
 
+> **Status (2026-06-30): mostly executed.** Every trim candidate below except the
+> custom editor component has since been cut — Ollama/OpenCode/Z.AI providers,
+> Firefox cookies + `sqlite3`, `/hud doctor`, the Ctrl+\` gitui overlay, and the
+> mascot sprite + above-editor shelf are all gone from the current codebase.
+> The rest of this document is kept as a historical record of the original
+> ~4,965-line baseline; line counts and surface descriptions below are stale.
+
 ## Summary
 
 pi-hud is a configurable terminal HUD for Pi: it owns Pi's footer, header,

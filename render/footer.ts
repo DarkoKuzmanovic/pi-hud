@@ -1,6 +1,6 @@
 // Footer: a single config-driven line below the input box. Left/right block
 // lists come from the layout config and render through the shared block
-// registry, so the footer and the shelf draw from the same vocabulary.
+// registry.
 
 import { padBetween, truncateToWidth } from "./format.js";
 import type { HudLayout } from "../config.js";

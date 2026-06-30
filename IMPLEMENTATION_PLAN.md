@@ -11,7 +11,7 @@ Current project notes for completed hardening work and remaining backlog. User-f
 - `/hud refresh` and `/hud ascii` reuse existing registered UI surfaces instead of re-running `install()`.
 - Defensive timer cleanup prevents duplicate 30s wall-clock timers if registration is re-entered.
 - Quota refresh compares visible provider state without `updatedAt` churn before re-rendering.
-- Quota changes now request both footer and shelf renders via `requestRenderAll()`.
+- Quota changes now request a footer re-render via `requestRenderAll()` (originally also drove the shelf; the shelf was removed 2026-06-30).
 - `HUD_ICONS=none` starts the formatter in ASCII icon mode.
 - Empty layout separators fall back to the default separator.
 - `padBetween()` truncates ANSI-styled output to terminal width.
@@ -21,8 +21,7 @@ Current project notes for completed hardening work and remaining backlog. User-f
 - `/hud blocks` lists the block registry from `render/blocks.ts`.
 - `/hud validate` re-reads `~/.pi/agent/pi-hud.layout.jsonc`, reports warning-only issues, and never mutates the file.
 - `/hud reload` surfaces non-fatal layout validation warnings after applying the merged layout.
-- `/hud doctor` reports local diagnostics for UI handles, layout status, provider cached state, in-flight refreshes, auth presence, `sqlite3`, Firefox profile/cookies DB presence, and robot spritesheet packaging.
-- `diagnostics.ts` keeps probes command-path-only: bounded local filesystem checks plus `sqlite3 --version`, no network, no provider refresh.
+- `/hud doctor` and `diagnostics.ts` have been removed (2026-06-30); no replacement self-diagnostics command currently exists.
 
 ### Layout and status protocol
 
@@ -31,13 +30,15 @@ Current project notes for completed hardening work and remaining backlog. User-f
 - `extStatuses` now includes pi-pulse's `tps` status instead of filtering it out.
 - Config supports `ext:<key>` for one specific extension status.
 
-### Mascot system
+### Mascot system — removed (2026-06-30)
 
-- Shelf mascot rendering supports Kitty image mode, ASCII fallback, and `off` mode.
-- Sprite size defaults to `10×5` cells.
-- Mascot styles are configurable with `sprite.mascot`: `teal-ghost` or `cute-robot`.
-- `cute-robot` renders from packaged `assets/robot-spritesheet.png`.
-- Kitty image rendering intentionally allows overlap without forcing blank spacer rows in the shelf.
+The above-editor shelf widget and mascot sprite (Kitty image mode, ASCII
+fallback, `teal-ghost`/`cute-robot` styles, `assets/robot-spritesheet.png`)
+have been removed entirely. `sprite.ts`, `render/shelf.ts`, the PNG asset, and
+the `sprite`/`shelf` layout config keys are gone. Shelf rows now live in
+`footer.extraRows`; `loadLayout()`/`mergeLayout()` auto-fold any legacy
+`shelf.rows` found in an old on-disk config into `footer.extraRows`, and
+`validateLayout()` flags lingering `sprite`/`shelf` keys as deprecated.
 
 ---
 
@@ -62,17 +63,19 @@ Defer until `/hud doctor` shows real-world failure rates. If implemented, prefer
 
 Anthropic already has a targeted disk cache; do not generalize blindly without data.
 
+> Note: this backlog item references `/hud doctor`, which has since been removed (2026-06-30). Revisit this item's premise before picking it up.
+
 ### 3. Generated default layout comments
 
 `config.ts` now has `BLOCK_DESCRIPTIONS`, but the JSONC default template still has a hand-maintained block comment. Consider generating that comment from the registry if block churn increases.
 
-### 4. Async `/hud doctor` probe
+### 4. Async `/hud doctor` probe — obsolete
 
-The current `sqlite3 --version` check is synchronous but bounded to 1s and only runs on explicit `/hud doctor`. If the command ever feels sluggish, switch the probe to async `execFile` without changing the report shape.
+`/hud doctor` has been removed (2026-06-30). This item no longer applies.
 
-### 5. Provider message redaction guard
+### 5. Provider message redaction guard — obsolete
 
-`/hud doctor` prints provider `message` strings. Current providers use short status messages such as `loading`, `login`, `unsupported`, or `throttled`. If future providers surface raw HTTP bodies or exception text, sanitize before including messages in the doctor report.
+`/hud doctor` has been removed (2026-06-30). This item no longer applies.
 
 ### 6. Footer ownership warning
 

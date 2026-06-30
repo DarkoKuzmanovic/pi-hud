@@ -17,19 +17,10 @@ import {
 	loadCachedAnthropicUsage,
 } from "./providers/anthropic.js";
 import {
-	fetchOllamaUsage,
-	ollamaToProvider,
-} from "./providers/ollama-cloud.js";
-import {
-	fetchOpenCodeUsage,
-	opencodeToProvider,
-} from "./providers/opencode.js";
-import {
 	fetchMinimaxUsage,
 	minimaxToProvider,
 } from "./providers/minimax.js";
 import { fetchUmansUsage, umansToProvider } from "./providers/umans.js";
-import { fetchZaiUsage, zaiToProvider } from "./providers/zai.js";
 import { resolveProviderId } from "./provider-routing.js";
 
 // Git
@@ -43,7 +34,6 @@ import type { GitDirtyResult, GitRemoteResult, GitLastCommit } from "./git.js";
 // Render
 import { renderHeader } from "./render/header.js";
 import { renderFooterLine } from "./render/footer.js";
-import { renderShelf } from "./render/shelf.js";
 import { BLOCK_DESCRIPTIONS, KNOWN_BLOCKS, type BlockContext } from "./render/blocks.js";
 import { initSessionTotals, accumulateMessage } from "./render/context.js";
 import {
@@ -54,7 +44,7 @@ import {
 } from "./render/header.js";
 import { setAsciiMode, isAsciiMode } from "./render/format.js";
 
-// Layout config + mascot sprite
+// Layout config
 import {
 	loadLayout,
 	layoutPath,
@@ -62,12 +52,6 @@ import {
 	type HudLayout,
 	type LayoutValidationIssue,
 } from "./config.js";
-import {
-	collectDoctorProbes,
-	formatDoctorReport,
-	type DoctorProviderSnapshot,
-} from "./diagnostics.js";
-import type { Mood } from "./sprite.js";
 
 // --- Constants ---
 const QUOTA_REFRESH_MS = 60_000;
@@ -128,22 +112,6 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "5h" }, { label: "week" }],
 	};
-	let ollamaUsage: ProviderUsage = {
-		id: "ollama-cloud",
-		name: "Ollama",
-		icon: "\uee0d",
-		status: "unknown",
-		message: "loading",
-		windows: [{ label: "5h" }, { label: "week" }],
-	};
-	let opencodeUsage: ProviderUsage = {
-		id: "opencode",
-		name: "OpenCode",
-		icon: "\uee0d",
-		status: "unknown",
-		message: "loading",
-		windows: [{ label: "5h" }, { label: "week" }, { label: "month" }],
-	};
 	let minimaxUsage: ProviderUsage = {
 		id: "minimax",
 		name: "MiniMax",
@@ -160,22 +128,11 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "5h" }],
 	};
-	let zaiUsage: ProviderUsage = {
-		id: "zai",
-		name: "Z.AI",
-		icon: "\uee0d",
-		status: "unknown",
-		message: "loading",
-		windows: [{ label: "5h" }, { label: "week" }],
-	};
 
 	let codexInFlight: Promise<void> | null = null;
 	let anthropicInFlight: Promise<void> | null = null;
-	let ollamaInFlight: Promise<void> | null = null;
-	let opencodeInFlight: Promise<void> | null = null;
 	let minimaxInFlight: Promise<void> | null = null;
 	let umansInFlight: Promise<void> | null = null;
-	let zaiInFlight: Promise<void> | null = null;
 
 	// Cached session totals (incremental, not O(n) per render)
 	let totals = initSessionTotals();
@@ -194,21 +151,17 @@ export default function piHud(pi: ExtensionAPI) {
 
 	// HUD UI handle for event-driven re-renders
 	let footerTui: { requestRender: () => void } | null = null;
-	let shelfTui: { requestRender: () => void } | null = null;
 	let wallClockTimer: ReturnType<typeof setInterval> | null = null;
 
-	// Layout config + mascot mood (shared by footer + shelf).
+	// Layout config
 	const initialLayout = loadLayout();
 	let layout: HudLayout = initialLayout.layout;
-	let mood: Mood = "idle";
-	// Footer-only data (git branch + extension statuses) cached for the shelf,
-	// which renders without a FooterDataProvider.
+	// Footer-only data (git branch + extension statuses) cached for re-renders.
 	let cachedBranch = "";
 	let cachedExtStatuses: ReadonlyMap<string, string> = new Map<string, string>();
 
 	const requestRenderAll = (): void => {
 		footerTui?.requestRender();
-		shelfTui?.requestRender();
 	};
 
 	const unsupportedUsage = (provider?: string): ProviderUsage => ({
@@ -224,34 +177,19 @@ export default function piHud(pi: ExtensionAPI) {
 		switch (resolveProviderId(ctx.model?.provider)) {
 			case "anthropic":
 				return anthropicUsage;
-			case "ollama-cloud":
-				return ollamaUsage;
-			case "opencode":
-				return opencodeUsage;
 			case "minimax":
 				return minimaxUsage;
 			case "codex":
 				return codexUsage;
 			case "umans":
 				return umansUsage;
-			case "zai":
-				return zaiUsage;
 			default:
 				return unsupportedUsage(ctx.model?.provider);
 		}
 	};
 
-	const buildDoctorProviders = (): DoctorProviderSnapshot[] => [
-		{ name: "Codex", usage: codexUsage, inFlight: codexInFlight !== null },
-		{ name: "Anthropic", usage: anthropicUsage, inFlight: anthropicInFlight !== null },
-		{ name: "Ollama", usage: ollamaUsage, inFlight: ollamaInFlight !== null },
-		{ name: "OpenCode", usage: opencodeUsage, inFlight: opencodeInFlight !== null },
-		{ name: "MiniMax", usage: minimaxUsage, inFlight: minimaxInFlight !== null },
-		{ name: "Umans", usage: umansUsage, inFlight: umansInFlight !== null },
-		{ name: "Z.AI", usage: zaiUsage, inFlight: zaiInFlight !== null },
-	];
 
-	/** Assemble the shared live data both the footer and shelf render from. */
+	/** Assemble the live data the footer renders from. */
 	const buildBlockContext = (
 		activeCtx: ExtensionContext,
 		theme: ThemeAccess,
@@ -270,6 +208,10 @@ export default function piHud(pi: ExtensionAPI) {
 		branch: cachedBranch,
 		extStatuses: cachedExtStatuses,
 		palette: getActivePalette(),
+		// Drive centralized chip wrapping in render/blocks.ts. Snapshotted as a
+		// Set so the O(1) membership check stays fast even with many blocks.
+		chips: new Set(layout.chips),
+		separator: layout.separator,
 	});
 
 
@@ -303,15 +245,6 @@ export default function piHud(pi: ExtensionAPI) {
 		return anthropicInFlight;
 	};
 
-	const refreshOllama = async () => {
-		if (ollamaInFlight) return ollamaInFlight;
-		ollamaInFlight = (async () => {
-			ollamaUsage = ollamaToProvider(await fetchOllamaUsage(), ollamaUsage);
-		})().finally(() => {
-			ollamaInFlight = null;
-		});
-		return ollamaInFlight;
-	};
 
 	const refreshMinimax = async () => {
 		if (minimaxInFlight) return minimaxInFlight;
@@ -333,45 +266,18 @@ export default function piHud(pi: ExtensionAPI) {
 		return umansInFlight;
 	};
 
-	const refreshZai = async () => {
-		if (zaiInFlight) return zaiInFlight;
-		zaiInFlight = (async () => {
-			zaiUsage = zaiToProvider(await fetchZaiUsage(), zaiUsage);
-		})().finally(() => {
-			zaiInFlight = null;
-		});
-		return zaiInFlight;
-	};
 
-	const refreshOpenCode = async () => {
-		if (opencodeInFlight) return opencodeInFlight;
-		opencodeInFlight = (async () => {
-			opencodeUsage = opencodeToProvider(
-				await fetchOpenCodeUsage(),
-				opencodeUsage,
-			);
-		})().finally(() => {
-			opencodeInFlight = null;
-		});
-		return opencodeInFlight;
-	};
 
 	const refreshActiveProvider = (ctx: ExtensionContext) => {
 		switch (resolveProviderId(ctx.model?.provider)) {
 			case "anthropic":
 				return refreshAnthropic();
-			case "ollama-cloud":
-				return refreshOllama();
-			case "opencode":
-				return refreshOpenCode();
 			case "minimax":
 				return refreshMinimax();
 			case "codex":
 				return refreshCodex();
 			case "umans":
 				return refreshUmans();
-			case "zai":
-				return refreshZai();
 			default:
 				return Promise.resolve();
 		}
@@ -640,46 +546,13 @@ export default function piHud(pi: ExtensionAPI) {
 			invalidate() {},
 		}));
 
-		// Mascot + status shelf above the input box. A keyed widget, so it does
-		// not conflict with the editor-component marker column. Renders the mood
-		// sprite (Kitty image when supported, else ASCII) plus the config-driven
-		// shelf rows to its left.
-		ctx.ui.setWidget(
-			"hud-shelf",
-			(tui, theme) => {
-				shelfTui = tui;
-				return {
-					dispose: () => {
-						shelfTui = null;
-					},
-					invalidate() {},
-					render(width: number): string[] {
-						if (!enabled) return [];
-						try {
-							const activeCtx = installedCtx ?? ctx;
-							const block = buildBlockContext(
-								activeCtx,
-								theme as unknown as ThemeAccess,
-							);
-							return renderShelf({ layout, mood, block })(width);
-						} catch (e) {
-							// Never leave the shelf silently blank — surface the error.
-							const msg = e instanceof Error ? e.message : String(e);
-							return [
-								(theme as unknown as ThemeAccess).fg(
-									"error",
-									`pi-hud shelf: ${msg}`.slice(0, Math.max(0, width)),
-								),
-							];
-						}
-					},
-				};
-			},
-			{ placement: "aboveEditor" },
-		);
-
 		if (initialLayout.warning) {
 			ctx.ui.notify(`HUD layout: ${initialLayout.warning}`, "warning");
+		} else if (initialLayout.warnings && initialLayout.warnings.length > 0) {
+			ctx.ui.notify(
+				`HUD layout loaded with warnings\n${formatLayoutValidationIssues(initialLayout.warnings)}`,
+				"warning",
+			);
 		}
 	});
 
@@ -691,24 +564,12 @@ export default function piHud(pi: ExtensionAPI) {
 
 	pi.on("agent_start", () => {
 		activeStartedAt = Date.now();
-		mood = "working";
 		requestRenderAll();
 	});
 
 	pi.on("agent_end", () => {
 		if (activeStartedAt) lastRunMs = Date.now() - activeStartedAt;
 		activeStartedAt = null;
-		mood = mood === "error" ? "error" : "success";
-		requestRenderAll();
-	});
-
-	pi.on("tool_execution_start", () => {
-		mood = "tool";
-		requestRenderAll();
-	});
-
-	pi.on("tool_execution_end", (event) => {
-		mood = event.isError ? "error" : "working";
 		requestRenderAll();
 	});
 
@@ -759,8 +620,6 @@ export default function piHud(pi: ExtensionAPI) {
 	pi.on("session_shutdown", (_event, ctx) => {
 		ctx.ui.setFooter(undefined);
 		ctx.ui.setHeader(undefined);
-		ctx.ui.setWidget("hud-shelf", undefined);
-		shelfTui = null;
 		if (wallClockTimer !== null) {
 			clearInterval(wallClockTimer);
 			wallClockTimer = null;
@@ -775,37 +634,10 @@ export default function piHud(pi: ExtensionAPI) {
 		if (tokenSpeed.isStreaming) tokenSpeed.stop();
 	});
 
-	// Ctrl+` opens gitui as a Kitty overlay
-	pi.registerShortcut("ctrl+`", {
-		description: "Open gitui in a Kitty overlay",
-		handler: async (ctx) => {
-			if (typeof process === "undefined" || !process.env?.KITTY_WINDOW_ID) {
-				ctx.ui.notify(
-					"Not running inside Kitty — cannot open overlay",
-					"warning",
-				);
-				return;
-			}
-			try {
-				await pi.exec("kitty", [
-					"@",
-					"launch",
-					"--type=overlay",
-					`--cwd=${ctx.cwd}`,
-					"gitui",
-				]);
-			} catch (e: any) {
-				ctx.ui.notify(
-					`gitui overlay failed — add allow_remote_control yes to kitty.conf (${e?.message ?? e})`,
-					"error",
-				);
-			}
-		},
-	});
 
 	pi.registerCommand("hud", {
 		description:
-			"Manage the HUD: /hud on|off|refresh|reload|layout|blocks|validate|doctor|status|theme [name]|ascii",
+			"Manage the HUD: /hud on|off|refresh|reload|layout|blocks|validate|status|theme [name]|ascii",
 		handler: async (args, ctx) => {
 			const arg = (args ?? "").trim().toLowerCase();
 
@@ -874,27 +706,6 @@ export default function piHud(pi: ExtensionAPI) {
 				return;
 			}
 
-			if (arg === "doctor") {
-				const validation = validateLayoutFile();
-				ctx.ui.notify(
-					formatDoctorReport({
-						ctx,
-						layoutPath: validation.path,
-						layout,
-						layoutWarnings: validation.issues,
-						asciiMode: isAsciiMode(),
-						surfaces: {
-							footer: footerTui !== null,
-							shelf: shelfTui !== null,
-							wallClockTimer: wallClockTimer !== null,
-						},
-						probes: collectDoctorProbes(),
-						providers: buildDoctorProviders(),
-					}),
-					"info",
-				);
-				return;
-			}
 
 			// --- theme ---
 			if (arg.startsWith("theme")) {
@@ -937,11 +748,8 @@ export default function piHud(pi: ExtensionAPI) {
 				[
 					`Codex: ${codexUsage.status}${codexUsage.message ? ` (${codexUsage.message})` : ""}`,
 					`Anthropic: ${anthropicUsage.status}${anthropicUsage.message ? ` (${anthropicUsage.message})` : ""}`,
-					`Ollama: ${ollamaUsage.status}${ollamaUsage.message ? ` (${ollamaUsage.message})` : ""}`,
-					`OpenCode: ${opencodeUsage.status}${opencodeUsage.message ? ` (${opencodeUsage.message})` : ""}`,
 					`MiniMax: ${minimaxUsage.status}${minimaxUsage.message ? ` (${minimaxUsage.message})` : ""}`,
 					`Umans: ${umansUsage.status}${umansUsage.message ? ` (${umansUsage.message})` : ""}`,
-					`Z.AI: ${zaiUsage.status}${zaiUsage.message ? ` (${zaiUsage.message})` : ""}`,
 				].join("\n"),
 				"info",
 			);

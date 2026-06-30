@@ -45,10 +45,8 @@ test("hud refresh and ascii commands reuse registered UI surfaces", () => {
 		let hudCommand = null;
 		let setFooterCalls = 0;
 		let setHeaderCalls = 0;
-		let setWidgetCalls = 0;
 		let setEditorCalls = 0;
 		let footerRenderRequests = 0;
-		let shelfRenderRequests = 0;
 		let intervalStarts = 0;
 		let intervalClears = 0;
 		const originalSetInterval = globalThis.setInterval;
@@ -93,10 +91,6 @@ test("hud refresh and ascii commands reuse registered UI surfaces", () => {
 						setHeaderCalls++;
 						return { render: () => [], invalidate: () => {} };
 					},
-					setWidget: (_key, cb) => {
-						setWidgetCalls++;
-						return cb({ requestRender: () => shelfRenderRequests++ }, theme);
-					},
 					setEditorComponent: () => {
 						setEditorCalls++;
 					},
@@ -115,7 +109,6 @@ test("hud refresh and ascii commands reuse registered UI surfaces", () => {
 			handlers.get("session_start")({}, ctx);
 			assert.default.equal(setFooterCalls, 1);
 			assert.default.equal(setHeaderCalls, 1);
-			assert.default.equal(setWidgetCalls, 1);
 			assert.default.equal(setEditorCalls, 1);
 			assert.default.equal(intervalStarts, 1);
 			assert.default.equal(intervalClears, 0);
@@ -123,25 +116,20 @@ test("hud refresh and ascii commands reuse registered UI surfaces", () => {
 			await hudCommand.handler("refresh", ctx);
 			assert.default.equal(setFooterCalls, 1, "refresh must not reinstall footer");
 			assert.default.equal(setHeaderCalls, 1, "refresh must not reinstall header");
-			assert.default.equal(setWidgetCalls, 1, "refresh must not reinstall shelf");
 			assert.default.equal(setEditorCalls, 1, "refresh must not reinstall editor component");
 			assert.default.equal(intervalStarts, 1, "refresh must not start another wall-clock timer");
 			assert.default.equal(footerRenderRequests, 1);
-			assert.default.equal(shelfRenderRequests, 1);
 
 			await hudCommand.handler("ascii", ctx);
 			assert.default.equal(setFooterCalls, 1, "ascii must not reinstall footer");
 			assert.default.equal(setHeaderCalls, 1, "ascii must not reinstall header");
-			assert.default.equal(setWidgetCalls, 1, "ascii must not reinstall shelf");
 			assert.default.equal(setEditorCalls, 1, "ascii must not reinstall editor component");
 			assert.default.equal(intervalStarts, 1, "ascii must not start another wall-clock timer");
 			assert.default.equal(footerRenderRequests, 2);
-			assert.default.equal(shelfRenderRequests, 2);
 
 			handlers.get("session_start")({}, ctx);
 			assert.default.equal(setFooterCalls, 2, "second install should replace footer");
 			assert.default.equal(setHeaderCalls, 2, "second install should replace header");
-			assert.default.equal(setWidgetCalls, 2, "second install should replace shelf");
 			assert.default.equal(setEditorCalls, 2, "second install should replace editor component");
 			assert.default.equal(intervalStarts, 2, "second install starts a replacement timer");
 			assert.default.equal(intervalClears, 1, "second install clears the prior timer");
