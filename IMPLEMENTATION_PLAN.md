@@ -26,6 +26,7 @@ Current project notes for completed hardening work and remaining backlog. User-f
 ### Layout and status protocol
 
 - The default footer shows `cwd`, `model`, `thinking`, `ext:model-prompts`, and `context` on the left, with `quota` and `speed` on the right.
+- `footer.extraRows` supports full-width rows below the main footer; entries are either a flat `BlockId[]` (left-only) or `{"left": [...], "right": [...]}` to split a row into left/right halves. The default extra rows render `tokens`/`cost`, `branch`/`dirty`/`commit`/`sync`, and `extStatuses`.
 - `extStatuses` now includes pi-pulse's `tps` status instead of filtering it out.
 - Config supports `ext:<key>` for one specific extension status.
 
