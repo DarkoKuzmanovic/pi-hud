@@ -144,3 +144,57 @@ assert.default.match(def, /\[ .+ gpt 5[._]?[0-9]*.* \]/, "model should be chip-w
 		assert.default.equal(unchip.includes("["), false, "empty chips set must unchip model");
 	`);
 });
+
+test("renderFooterLine splits an extraRows {left,right} object row across the width", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { renderFooterLine } = await import("./render/footer.ts");
+
+		const theme = {
+			fg: (_name, text) => text,
+			inverse: (text) => text,
+		};
+		const ctx = {
+			cwd: "/tmp",
+			model: { id: "openai-codex/gpt-5.5" },
+			getContextUsage: () => ({ tokens: 0, contextWindow: 272000 }),
+			sessionManager: { getSessionId: () => "session-1" },
+		};
+		const block = {
+			ctx,
+			theme,
+			totals: { input: 0, output: 0, cost: 0 },
+			activeUsage: { id: "unsupported", name: "Unsupported", icon: "?", status: "unknown", windows: [] },
+			thinkingLevel: "xhigh",
+			activeStartedAt: null,
+			lastRunMs: null,
+			lastTps: null,
+			gitDirty: { text: "", isClean: true },
+			gitRemote: { ahead: 0, behind: 0, hasRemote: false },
+			gitLastCommit: { hash: "", subject: "", age: "" },
+			branch: "main",
+			extStatuses: new Map(),
+		};
+		const layout = {
+			separator: " · ",
+			footer: {
+				enabled: true,
+				left: ["model"],
+				right: [],
+				extraRows: [
+					{ left: ["branch"], right: ["cwd"] },
+					["extStatuses"],
+				],
+			},
+		};
+
+		const lines = renderFooterLine(block, layout)(140);
+		// extraRows[1] (extStatuses) is empty for this fixture, so only the main
+		// line + the object row render.
+		assert.default.equal(lines.length, 2);
+		const row = lines[1];
+		assert.default.match(row, /main/, "left side (branch) renders");
+		assert.default.match(row, /\/tmp/, "right side (cwd) renders");
+		assert.default.ok(row.indexOf("main") < row.indexOf("/tmp"), "left renders before right");
+	`);
+});

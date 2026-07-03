@@ -20,8 +20,14 @@ export function renderFooterLine(
 		if (left || right) lines.push(padBetween(left, right, width));
 
 		for (const row of layout.footer.extraRows) {
-			const line = renderGroup(row, block, layout.separator);
-			if (line) lines.push(truncateToWidth(line, width, "…"));
+			if (Array.isArray(row)) {
+				const line = renderGroup(row, block, layout.separator);
+				if (line) lines.push(truncateToWidth(line, width, "…"));
+				continue;
+			}
+			const rowLeft = renderGroup(row.left, block, layout.separator);
+			const rowRight = renderGroup(row.right ?? [], block, layout.separator);
+			if (rowLeft || rowRight) lines.push(padBetween(rowLeft, rowRight, width));
 		}
 
 		return lines;

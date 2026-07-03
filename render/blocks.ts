@@ -34,6 +34,8 @@ const ANSI_PATTERN = /\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g;
 /** Extension-status keys pi-hud never surfaces as a generic chip. */
 export const HIDDEN_STATUSES = new Set([
 	"ultrathink",
+	// already rendered as the `ext:model-prompts` chip on line 1
+	"model-prompts",
 ]);
 
 /** All live data a block may need. Shared by footer + shelf renders. */
@@ -78,7 +80,8 @@ function cleanExtStatus(value: string, theme: ThemeAccess): string {
 
 const RUN_ICON = "\uf017";
 const SPEED_ICON = "\udb80\ude41";
-const SESSION_ICON = "\u{f0929}";
+const SESSION_ID_ICON = "\uf2c1";
+const SESSION_NAME_ICON = "\uea8b";
 
 type BlockFn = (c: BlockContext) => string;
 
@@ -238,7 +241,7 @@ const BLOCKS: Record<KnownBlockId, BlockSpec> = {
 	sessionId: {
 		plain: (c) => {
 			const id = c.ctx.sessionManager.getSessionId();
-			return id ? c.theme.fg("muted", `${SESSION_ICON} ${id}`) : "";
+			return id ? c.theme.fg("muted", `${SESSION_ID_ICON} ${id}`) : "";
 		},
 		chip: null,
 	},
@@ -247,7 +250,7 @@ const BLOCKS: Record<KnownBlockId, BlockSpec> = {
 			const name = c.ctx.sessionManager.getSessionName?.() ?? "";
 			const trimmed = name.trim();
 			return trimmed
-				? c.theme.fg("muted", `${SESSION_ICON} ${truncateToWidth(trimmed, 36, "…")}`)
+				? c.theme.fg("muted", `${SESSION_NAME_ICON} ${truncateToWidth(trimmed, 36, "…")}`)
 				: "";
 		},
 		chip: null,
@@ -285,7 +288,12 @@ export function renderBlock(id: string, c: BlockContext): string {
 	if (id.startsWith("ext:")) {
 		const key = id.slice(4);
 		const val = c.extStatuses?.get(key);
-		return val ? cleanExtStatus(val, c.theme) : "";
+		if (!val) return "";
+		const cleaned = cleanExtStatus(val, c.theme);
+		const visible = cleaned.replace(ANSI_PATTERN, "").trim();
+		if (!visible) return "";
+		const wantChip = c.chips instanceof Set && c.chips.has(id);
+		return wantChip ? dimChip(visible, c.theme) : cleaned;
 	}
 	const spec = BLOCKS[id];
 	if (!spec) return "";

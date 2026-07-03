@@ -97,6 +97,51 @@ test("validateLayout accepts ext status blocks with explicit keys", () => {
 	`);
 });
 
+test("footer extraRows accepts {left,right} object rows alongside flat arrays", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { mergeLayout, validateLayout } = await import("./config.ts");
+
+		const raw = {
+			footer: {
+				enabled: true,
+				left: ["model"],
+				right: [],
+				extraRows: [
+					{ left: ["sessionName"], right: ["sessionId"] },
+					["extStatuses"],
+				],
+			},
+		};
+
+		assert.default.deepEqual(validateLayout(raw), []);
+		const merged = mergeLayout(raw);
+		assert.default.deepEqual(merged.footer.extraRows, [
+			{ left: ["sessionName"], right: ["sessionId"] },
+			["extStatuses"],
+		]);
+	`);
+});
+
+test("validateLayout warns when an extraRows object row is malformed", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { validateLayout } = await import("./config.ts");
+
+		const missingLeft = validateLayout({ footer: { extraRows: [{ right: ["speed"] }] } });
+		const text1 = missingLeft.map((i) => i.path + " " + i.message).join("\n");
+		assert.default.match(text1, /footer\.extraRows\[0\].*left/);
+
+		const badRight = validateLayout({ footer: { extraRows: [{ left: ["speed"], right: "nope" }] } });
+		const text2 = badRight.map((i) => i.path + " " + i.message).join("\n");
+		assert.default.match(text2, /footer\.extraRows\[0\]\.right/);
+
+		const unknownInObjectRow = validateLayout({ footer: { extraRows: [{ left: ["bogus"] }] } });
+		const text3 = unknownInObjectRow.map((i) => i.path + " " + i.message).join("\n");
+		assert.default.match(text3, /footer\.extraRows\[0\]\.left\[0\].*bogus/);
+	`);
+});
+
 test("DEFAULT_LAYOUT includes the default chip set", () => {
 	runBunAssertions(String.raw`
 		const assert = await import("node:assert/strict");

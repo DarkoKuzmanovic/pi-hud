@@ -18,14 +18,20 @@ import { KNOWN_BLOCKS } from "./render/blocks.js";
 /** A block id, optionally an extension-status key as `ext:<key>`. */
 export type BlockId = string;
 
+/**
+ * One extra footer row: either a flat (left-only) list of block ids, or an
+ * object splitting the row into left/right-aligned sides like the main line.
+ */
+export type FooterRow = BlockId[] | { left: BlockId[]; right?: BlockId[] };
+
 export interface FooterConfig {
 	enabled: boolean;
 	/** Left-aligned block ids. */
 	left: BlockId[];
 	/** Right-aligned block ids. */
 	right: BlockId[];
-	/** Additional full-width rows rendered below the main footer line. */
-	extraRows: BlockId[][];
+	/** Additional full-width rows rendered below the main footer line. Each row is either a flat (left-only) list or a {left,right} object. */
+	extraRows: FooterRow[];
 }
 
 export interface HudLayout {
@@ -58,7 +64,8 @@ export const DEFAULT_CHIPS: BlockId[] = [
 	"folder",
 	"model",
 	"thinking",
-	"context",
+"context",
+	"ext:model-prompts",
 	"quota",
 ];
 
@@ -66,7 +73,7 @@ export const DEFAULT_LAYOUT: HudLayout = {
 	separator: " · ",
 	footer: {
 		enabled: true,
-		left: ["cwd", "model", "thinking", "context"],
+left: ["cwd", "model", "thinking", "ext:model-prompts", "context"],
 		right: ["quota", "speed"],
 		extraRows: [
 			["tokens", "cost"],
@@ -94,6 +101,8 @@ const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart 
 //   dirty        git dirty count             sync        ✓ synced / ahead-behind
 //
 // Reorder/move blocks freely within footer.left, footer.right, or footer.extraRows.
+// Each extraRows entry is either a flat array (left-only, full-width) or an
+// object like {"left": [...], "right": [...]} for a left/right split row.
 {
   // Separator drawn between blocks in a footer side or extra row.
   "separator": " · ",
@@ -101,7 +110,7 @@ const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart 
   // Main footer line below the input box, plus optional full-width rows below it.
   "footer": {
     "enabled": true,
-    "left": ["cwd", "model", "thinking", "context"],
+"left": ["cwd", "model", "thinking", "ext:model-prompts", "context"],
     "right": ["quota", "speed"],
     "extraRows": [
       ["tokens", "cost"],
@@ -117,7 +126,7 @@ const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart 
   // is a block id — \`ext:<key>\` is also accepted as long as the referenced
   // extension status is registered. Example for chipping plain blocks:
   //   "chips": ["tokens", "cost", "branch", "dirty", "speed"]
-  "chips": ["project", "folder", "model", "thinking", "context", "quota"]
+"chips": ["project", "folder", "model", "thinking", "context", "ext:model-prompts", "quota"]
 }
 `;
 
@@ -192,6 +201,21 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 	return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
+function isFooterRowShape(v: unknown): v is FooterRow {
+	if (isStringArray(v)) return true;
+	if (isRecord(v)) {
+		if (!isStringArray(v.left)) return false;
+		if ("right" in v && !isStringArray(v.right)) return false;
+		return true;
+	}
+	return false;
+}
+
+function normalizeFooterRow(v: FooterRow): FooterRow {
+	if (Array.isArray(v)) return [...v];
+	return { left: [...v.left], right: v.right ? [...v.right] : [] };
+}
+
 function warn(
 	issues: LayoutValidationIssue[],
 	path: string,
@@ -246,13 +270,25 @@ function validateBlockRows(
 		return;
 	}
 	value.forEach((row, rowIndex) => {
-		if (!Array.isArray(row)) {
-			warn(issues, `${path}[${rowIndex}]`, "must be an array of block ids");
+		const rowPath = `${path}[${rowIndex}]`;
+		if (Array.isArray(row)) {
+			row.forEach((id, blockIndex) => {
+				validateBlockId(id, `${rowPath}[${blockIndex}]`, issues);
+			});
 			return;
 		}
-		row.forEach((id, blockIndex) => {
-			validateBlockId(id, `${path}[${rowIndex}][${blockIndex}]`, issues);
-		});
+		if (isRecord(row)) {
+			if ("left" in row) {
+				validateBlockList(row.left, `${rowPath}.left`, issues);
+			} else {
+				warn(issues, rowPath, "object row must have a 'left' array");
+			}
+			if ("right" in row) {
+				validateBlockList(row.right, `${rowPath}.right`, issues);
+			}
+			return;
+		}
+		warn(issues, rowPath, "must be an array of block ids or a {left,right} object");
 	});
 }
 
@@ -323,13 +359,13 @@ export function mergeLayout(raw: unknown): HudLayout {
 	if (typeof r.separator === "string" && r.separator.length > 0) base.separator = r.separator;
 
 	const footer = r.footer as Record<string, unknown> | undefined;
-	let explicitExtraRows: string[][] | null = null;
+	let explicitExtraRows: FooterRow[] | null = null;
 	if (footer && typeof footer === "object") {
 		if (typeof footer.enabled === "boolean") base.footer.enabled = footer.enabled;
 		if (isStringArray(footer.left)) base.footer.left = footer.left;
 		if (isStringArray(footer.right)) base.footer.right = footer.right;
-		if (Array.isArray(footer.extraRows) && footer.extraRows.every(isStringArray)) {
-			explicitExtraRows = footer.extraRows as string[][];
+		if (Array.isArray(footer.extraRows) && footer.extraRows.every(isFooterRowShape)) {
+			explicitExtraRows = (footer.extraRows as FooterRow[]).map(normalizeFooterRow);
 		}
 	}
 

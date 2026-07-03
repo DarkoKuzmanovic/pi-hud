@@ -34,9 +34,11 @@ A persistent footer (`ctx.ui.setFooter`) below the editor. The default main line
 
 | Left | Right |
 | --- | --- |
-| `cwd`, `model`, `thinking`, `context` | `quota`, `speed` |
+| `cwd`, `model`, `thinking`, `ext:model-prompts`, `context` | `quota`, `speed` |
 
 Additional full-width rows can be configured with `footer.extraRows`. By default pi-hud renders three: `tokens`/`cost`, `branch`/`dirty`/`commit`/`sync`, and `extStatuses` — so native extension statuses such as pi-pulse's `tps` status can appear below the main footer without another extension taking footer ownership.
+
+Each entry in `extraRows` is either a flat array of block ids (left-only, full-width) or an object `{"left": [...], "right": [...]}` to split the row into left/right halves like the main footer line — useful for, say, anchoring `branch` to the left and `cwd` to the right of the same row.
 
 ## Supported providers
 
@@ -76,7 +78,7 @@ Current default layout:
   "separator": " · ",
   "footer": {
     "enabled": true,
-    "left": ["cwd", "model", "thinking", "context"],
+    "left": ["cwd", "model", "thinking", "ext:model-prompts", "context"],
     "right": ["quota", "speed"],
     "extraRows": [
       ["tokens", "cost"],
@@ -84,7 +86,7 @@ Current default layout:
       ["extStatuses"]
     ]
   },
-  "chips": ["project", "folder", "model", "thinking", "context", "quota"]
+  "chips": ["project", "folder", "model", "thinking", "context", "ext:model-prompts", "quota"]
 }
 ```
 
