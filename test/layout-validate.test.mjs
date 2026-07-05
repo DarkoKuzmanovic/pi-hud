@@ -195,6 +195,42 @@ test("mergeLayout falls back to defaults for malformed chips values", () => {
 	`);
 });
 
+test("validateLayout accepts a valid theme and warns on an unknown one", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { validateLayout } = await import("./config.ts");
+		const { PALETTE_NAMES } = await import("./render/header.ts");
+
+		// Every named palette plus "random" must validate cleanly.
+		for (const name of [...PALETTE_NAMES, "random"]) {
+			assert.default.deepEqual(validateLayout({ theme: name }), []);
+		}
+
+		const unknown = validateLayout({ theme: "chartreuse" });
+		assert.default.equal(unknown.length, 1);
+		assert.default.equal(unknown[0].severity, "warning");
+		assert.default.match(unknown[0].path + " " + unknown[0].message, /theme.*chartreuse/);
+
+		const nonString = validateLayout({ theme: 42 });
+		assert.default.match(nonString.map((i) => i.path + " " + i.message).join("\n"), /theme.*string/);
+	`);
+});
+
+test("mergeLayout keeps a valid theme and drops an invalid one", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { mergeLayout } = await import("./config.ts");
+		const { PALETTE_NAMES } = await import("./render/header.ts");
+		const first = PALETTE_NAMES[0];
+		assert.default.equal(mergeLayout({ theme: first }).theme, first);
+		assert.default.equal(mergeLayout({ theme: "random" }).theme, "random");
+		// Unknown / malformed themes leave the key undefined (startup keeps random default).
+		assert.default.equal(mergeLayout({ theme: "chartreuse" }).theme, undefined);
+		assert.default.equal(mergeLayout({ theme: 42 }).theme, undefined);
+		assert.default.equal(mergeLayout({}).theme, undefined);
+	`);
+});
+
 test("validateLayout warns for bad chip ids like other block lists", () => {
 	runBunAssertions(String.raw`
 		const assert = await import("node:assert/strict");

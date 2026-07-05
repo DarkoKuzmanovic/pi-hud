@@ -107,6 +107,66 @@ test("/hud validate reports valid and invalid layout files without mutating them
 });
 
 
+test("/hud theme applies immediately and persists the choice to the layout file", () => {
+	const home = mkdtempSync(join(tmpdir(), "pi-hud-home-"));
+	try {
+		const agentDir = join(home, ".pi", "agent");
+		mkdirSync(agentDir, { recursive: true });
+		const layoutFile = join(agentDir, "pi-hud.layout.jsonc");
+		// A commented layout with no theme key — exercises the insert path and
+		// proves comments survive the write-back (no parse→stringify).
+		const original = '// pi-hud layout\n{\n  "separator": " · "\n}\n';
+		writeFileSync(layoutFile, original, "utf8");
+		runBunAssertions(String.raw`
+			const assert = await import("node:assert/strict");
+			const { readFileSync } = await import("node:fs");
+			const { default: piHud } = await import("./index.ts");
+			const { PALETTE_NAMES } = await import("./render/header.ts");
+			const layoutFile = process.env.PI_HUD_TEST_LAYOUT_FILE;
+			let hudCommand = null;
+			const notifications = [];
+			const pi = {
+				on: () => {},
+				registerShortcut: () => {},
+				registerCommand: (name, cfg) => {
+					if (name === "hud") hudCommand = cfg;
+				},
+				getThinkingLevel: () => "high",
+			};
+			const ctx = {
+				hasUI: true,
+				cwd: "/tmp/pi-hud-test",
+				model: { provider: "codex", id: "openai-codex/gpt" },
+				ui: { notify: (message, level) => notifications.push({ message, level }) },
+			};
+			piHud(pi);
+
+			const name = PALETTE_NAMES[0];
+			await hudCommand.handler("theme " + name, ctx);
+
+			// Notify text no longer defers to "next session start".
+			assert.default.equal(notifications.at(-1).level, "info");
+			assert.default.equal(notifications.at(-1).message, "HUD theme: " + name);
+			assert.default.doesNotMatch(notifications.at(-1).message, /next session/i);
+
+			// Choice written to disk; comment preserved; exactly one theme key.
+			const afterInsert = readFileSync(layoutFile, "utf8");
+			assert.default.match(afterInsert, /pi-hud layout/);
+			assert.default.match(afterInsert, new RegExp('"theme"\\s*:\\s*"' + name + '"'));
+			assert.default.equal(afterInsert.match(/"theme"/g).length, 1);
+
+			// Switching swaps the existing value in place (replace path).
+			await hudCommand.handler("theme random", ctx);
+			const afterSwap = readFileSync(layoutFile, "utf8");
+			assert.default.match(afterSwap, /"theme"\s*:\s*"random"/);
+			assert.default.equal(afterSwap.match(/"theme"/g).length, 1);
+			assert.default.doesNotMatch(afterSwap, new RegExp('"' + name + '"'));
+		`, { HOME: home, PI_HUD_TEST_LAYOUT_FILE: layoutFile });
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
 test("/hud reload surfaces layout validation warnings", () => {
 	const home = mkdtempSync(join(tmpdir(), "pi-hud-home-"));
 	try {

@@ -12,6 +12,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { KNOWN_BLOCKS } from "./render/blocks.js";
+import { PALETTE_NAMES } from "./render/header.js";
 
 // --- Schema ---------------------------------------------------------------
 
@@ -40,7 +41,16 @@ export interface HudLayout {
 	footer: FooterConfig;
 	/** Block ids rendered with chip-style brackets at render time. Defaults to `DEFAULT_CHIPS`. */
 	chips: BlockId[];
+	/**
+	 * Header gradient palette applied at startup. One of PALETTE_NAMES or
+	 * "random" (re-randomize each session). Omit to keep the built-in random
+	 * default. Written back by `/hud theme <name>`.
+	 */
+	theme?: string;
 }
+
+/** Palette names accepted for the layout `theme` key (named palettes + "random"). */
+const THEME_NAMES = new Set<string>([...PALETTE_NAMES, "random"]);
 
 export interface LayoutValidationIssue {
 	severity: "warning";
@@ -127,6 +137,11 @@ const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart 
   // extension status is registered. Example for chipping plain blocks:
   //   "chips": ["tokens", "cost", "branch", "dirty", "speed"]
 "chips": ["project", "folder", "model", "thinking", "context", "ext:model-prompts", "quota"]
+
+  // Header gradient palette applied on startup. One of electric, sunset, ocean,
+  // aurora, inferno, or "random" (re-randomize each session). Omit to keep the
+  // random default. \`/hud theme <name>\` applies it live and writes it here.
+  // "theme": "ocean"
 }
 `;
 
@@ -347,6 +362,18 @@ export function validateLayout(raw: unknown): LayoutValidationIssue[] {
 		validateBlockList(raw.chips, "chips", issues);
 	}
 
+	if ("theme" in raw) {
+		if (typeof raw.theme !== "string") {
+			warn(issues, "theme", "must be a palette name string");
+		} else if (!THEME_NAMES.has(raw.theme)) {
+			warn(
+				issues,
+				"theme",
+				`unknown theme "${raw.theme}"; expected ${PALETTE_NAMES.join(", ")}, or "random"`,
+			);
+		}
+	}
+
 	return issues;
 }
 
@@ -396,6 +423,12 @@ export function mergeLayout(raw: unknown): HudLayout {
 
 	if (isStringArray(r.chips)) {
 		base.chips = [...r.chips];
+	}
+
+	// Only accept a recognized palette name (or "random"); anything else is
+	// left undefined so startup keeps the built-in random default.
+	if (typeof r.theme === "string" && THEME_NAMES.has(r.theme)) {
+		base.theme = r.theme;
 	}
 
 	return base;
@@ -466,5 +499,44 @@ export function loadLayout(): LoadResult {
 			layout: JSON.parse(JSON.stringify(DEFAULT_LAYOUT)),
 			warning: `pi-hud: layout config invalid (${msg}); using defaults`,
 		};
+	}
+}
+
+/**
+ * Persist the chosen header palette to the layout .jsonc by rewriting only the
+ * `theme` value — comments and formatting are preserved. If a `"theme"` key
+ * already exists its value is swapped; otherwise the key is inserted right
+ * after the opening brace of the JSON object. Creates the default file first
+ * when it is missing. Best-effort: returns false with a message on failure.
+ */
+export function writeThemeToLayout(
+	name: string,
+): { ok: boolean; error?: string } {
+	const path = layoutPath();
+	try {
+		if (!existsSync(path)) {
+			mkdirSync(dirname(path), { recursive: true });
+			writeFileSync(path, DEFAULT_FILE, "utf8");
+		}
+		const text = readFileSync(path, "utf8");
+		const themeKey = /"theme"\s*:\s*"[^"]*"/;
+		let next: string;
+		if (themeKey.test(text)) {
+			next = text.replace(themeKey, `"theme": "${name}"`);
+		} else {
+			const braceIdx = text.indexOf("{");
+			if (braceIdx === -1) {
+				return { ok: false, error: "layout file has no JSON object" };
+			}
+			next =
+				text.slice(0, braceIdx + 1) +
+				`\n  "theme": "${name}",` +
+				text.slice(braceIdx + 1);
+		}
+		writeFileSync(path, next, "utf8");
+		return { ok: true };
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: msg };
 	}
 }

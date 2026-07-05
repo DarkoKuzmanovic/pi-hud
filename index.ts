@@ -49,6 +49,7 @@ import {
 	loadLayout,
 	layoutPath,
 	validateLayoutFile,
+	writeThemeToLayout,
 	type HudLayout,
 	type LayoutValidationIssue,
 } from "./config.js";
@@ -156,6 +157,9 @@ export default function piHud(pi: ExtensionAPI) {
 	// Layout config
 	const initialLayout = loadLayout();
 	let layout: HudLayout = initialLayout.layout;
+	// Apply a persisted header palette at startup so the theme choice survives
+	// restarts. "random" (or an absent key) keeps the built-in random default.
+	if (layout.theme) setActivePalette(layout.theme);
 	// Footer-only data (git branch + extension statuses) cached for re-renders.
 	let cachedBranch = "";
 	let cachedExtStatuses: ReadonlyMap<string, string> = new Map<string, string>();
@@ -727,10 +731,20 @@ export default function piHud(pi: ExtensionAPI) {
 					return;
 				}
 				setActivePalette(themeName);
-				ctx.ui.notify(
-					`HUD theme: ${themeName} (applies on next session start)`,
-					"info",
-				);
+				layout.theme = themeName;
+				// setActivePalette swaps the module-level palette; re-render so the
+				// header gradient updates immediately (a footer render triggers a
+				// full-frame repaint, same as /hud ascii).
+				requestRenderAll();
+				const persisted = writeThemeToLayout(themeName);
+				if (persisted.ok) {
+					ctx.ui.notify(`HUD theme: ${themeName}`, "info");
+				} else {
+					ctx.ui.notify(
+						`HUD theme: ${themeName} (applied, but couldn't save to layout: ${persisted.error})`,
+						"warning",
+					);
+				}
 				return;
 			}
 
