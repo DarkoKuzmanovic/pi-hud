@@ -36,7 +36,12 @@ export const HIDDEN_STATUSES = new Set([
 	"ultrathink",
 	// already rendered as the `ext:model-prompts` chip on line 1
 	"model-prompts",
+	// working-indicator/style config, not a live status
+	"contextual-working",
 ]);
+
+const MCP_ICON = "\udb81\udc8b"; // nf-md-server
+const PKG_ICON = "\udb80\udfd6"; // nf-md-package
 
 /** All live data a block may need. Shared by footer + shelf renders. */
 export interface BlockContext {
@@ -71,9 +76,18 @@ function cleanExtStatus(value: string, theme: ThemeAccess): string {
 		.replace(/\s*(?:[·•|│]\s*)?[↻⏸]?\s*auto-update\b.*$/iu, "")
 		.trim();
 	const mcp = withoutAutoUpdate.match(/^MCP:\s*(\S+)\s+servers?\b/iu);
-	if (mcp) return ` ${theme.fg("dim", mcp[1])}`;
+	if (mcp) {
+		const zero = mcp[1].startsWith("0/") || mcp[1] === "0";
+		return zero
+			? ` ${theme.fg("dim", MCP_ICON + " " + mcp[1])}`
+			: ` ${MCP_ICON} ${theme.fg("accent", mcp[1])}`;
+	}
 	const packages = withoutAutoUpdate.match(/^(\d+)\s+pkgs?\b/iu);
-	if (packages) return ` ${theme.fg("dim", packages[1])}`;
+	if (packages) {
+		const updates = visible.match(/(\d+)\s+updates?\b/iu);
+		const base = ` ${PKG_ICON} ${theme.fg("accent", packages[1])}`;
+		return updates ? `${base} ${theme.fg("warning", "\u2191" + updates[1])}` : base;
+	}
 	if (!withoutAutoUpdate) return "";
 	return withoutAutoUpdate === visible ? value : withoutAutoUpdate;
 }
