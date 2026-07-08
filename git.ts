@@ -30,7 +30,11 @@ function parseGitDirty(raw: string): GitDirtyResult {
 			if (line[1] !== " ") modified++;
 		}
 	}
-	const text = [`\u25cf${modified}`, `\u271a${staged}`, `?${untracked}`].filter((part) => !part.endsWith("0")).join(" ") || "dirty";
+	const parts: string[] = [];
+	if (modified > 0) parts.push(`\u25cf ${modified}`);
+	if (staged > 0) parts.push(`\u271a ${staged}`);
+	if (untracked > 0) parts.push(`? ${untracked}`);
+	const text = parts.join("  ") || "dirty";
 	return { text, isClean: false };
 }
 
