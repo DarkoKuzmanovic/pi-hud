@@ -6,5 +6,6 @@ export function resolveProviderId(provider?: string): ProviderId | undefined {
 	if (provider === "codex" || provider === "openai-codex") return "codex";
 	if (provider === "minimax" || provider === "minimax-cn") return "minimax";
 	if (provider === "umans") return "umans";
+	if (provider === "openference") return "openference";
 	return undefined;
 }

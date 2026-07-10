@@ -21,6 +21,7 @@ import {
 	minimaxToProvider,
 } from "./providers/minimax.js";
 import { fetchUmansUsage, umansToProvider } from "./providers/umans.js";
+import { fetchOpenferenceUsage, openferenceToProvider } from "./providers/openference.js";
 import { resolveProviderId } from "./provider-routing.js";
 
 // Git
@@ -57,6 +58,9 @@ import {
 // --- Constants ---
 const QUOTA_REFRESH_MS = 60_000;
 const GIT_REFRESH_MS = 5_000;
+// Openference is refreshed on agent_start (not the wall-clock quota timer) because its
+// Firefox-session read is comparatively heavy; this throttles those turn-start refreshes.
+const OPENFERENCE_REFRESH_MS = 60_000;
 const TPS_RENDER_THROTTLE_MS = 250;
 
 // --- Provider helpers ---
@@ -129,11 +133,22 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "5h" }],
 	};
+	let openferenceUsage: ProviderUsage = {
+		id: "openference",
+		name: "Openference",
+		icon: "\udb80\udfbd",
+		status: "unknown",
+		message: "loading",
+		windows: [{ label: "daily" }],
+	};
 
 	let codexInFlight: Promise<void> | null = null;
 	let anthropicInFlight: Promise<void> | null = null;
 	let minimaxInFlight: Promise<void> | null = null;
 	let umansInFlight: Promise<void> | null = null;
+	let openferenceInFlight: Promise<void> | null = null;
+	// Throttle for agent_start-driven Openference refreshes (excluded from the wall-clock timer).
+	let lastOpenferenceRefreshAt = 0;
 
 	// Cached session totals (incremental, not O(n) per render)
 	let totals = initSessionTotals();
@@ -187,6 +202,8 @@ export default function piHud(pi: ExtensionAPI) {
 				return codexUsage;
 			case "umans":
 				return umansUsage;
+			case "openference":
+				return openferenceUsage;
 			default:
 				return unsupportedUsage(ctx.model?.provider);
 		}
@@ -270,6 +287,16 @@ export default function piHud(pi: ExtensionAPI) {
 		return umansInFlight;
 	};
 
+	const refreshOpenference = async () => {
+		if (openferenceInFlight) return openferenceInFlight;
+		openferenceInFlight = (async () => {
+			openferenceUsage = openferenceToProvider(await fetchOpenferenceUsage(), openferenceUsage);
+		})().finally(() => {
+			openferenceInFlight = null;
+		});
+		return openferenceInFlight;
+	};
+
 
 
 	const refreshActiveProvider = (ctx: ExtensionContext) => {
@@ -282,6 +309,8 @@ export default function piHud(pi: ExtensionAPI) {
 				return refreshCodex();
 			case "umans":
 				return refreshUmans();
+			case "openference":
+				return refreshOpenference();
 			default:
 				return Promise.resolve();
 		}
@@ -337,14 +366,19 @@ export default function piHud(pi: ExtensionAPI) {
 			// Wall-clock refresh at 30s: quota/git refresh checks + time-based display updates.
 			// Only requestRender() when something actually changed — unconditional re-renders
 			// cause the TUI to scroll the viewport back to the bottom, disrupting reading.
+			// Openference is excluded from this timer-driven quota check on purpose — see
+			// OPENFERENCE_REFRESH_MS above and the agent_start handler below.
 			if (wallClockTimer !== null) {
 				clearInterval(wallClockTimer);
 				wallClockTimer = null;
 			}
 			wallClockTimer = setInterval(() => {
 				const activeCtx = installedCtx ?? ctx;
+				const activeProviderId = resolveProviderId(activeCtx.model?.provider);
 				const activeUsage = getActiveUsage(activeCtx);
-				const needsQuotaRefresh = Date.now() - (activeUsage.updatedAt ?? 0) > QUOTA_REFRESH_MS;
+				const needsQuotaRefresh =
+					activeProviderId !== "openference" &&
+					Date.now() - (activeUsage.updatedAt ?? 0) > QUOTA_REFRESH_MS;
 				if (needsQuotaRefresh) {
 					const prevUsage = stableUsageKey(activeUsage);
 					void refreshActiveProvider(activeCtx).then(() => {
@@ -387,7 +421,7 @@ export default function piHud(pi: ExtensionAPI) {
 						cachedExtStatuses = footerData.getExtensionStatuses();
 						const block = buildBlockContext(
 							activeCtx,
-							theme as unknown as ThemeAccess,
+							theme,
 						);
 						return renderFooterLine(block, layout)(width);
 					} catch (err: any) {
@@ -568,6 +602,17 @@ export default function piHud(pi: ExtensionAPI) {
 
 	pi.on("agent_start", () => {
 		activeStartedAt = Date.now();
+		// Openference isn't on the wall-clock quota timer (its Firefox-session read is heavy);
+		// refresh it here on turn start instead, throttled by OPENFERENCE_REFRESH_MS.
+		const activeCtx = installedCtx;
+		if (
+			activeCtx &&
+			resolveProviderId(activeCtx.model?.provider) === "openference" &&
+			Date.now() - lastOpenferenceRefreshAt > OPENFERENCE_REFRESH_MS
+		) {
+			lastOpenferenceRefreshAt = Date.now();
+			void refreshOpenference().then(() => requestRenderAll());
+		}
 		requestRenderAll();
 	});
 

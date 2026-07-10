@@ -130,12 +130,14 @@ export function thinkingChip(level: string, theme: ThemeAccess): string {
 						? "thinkingLow"
 						: level === "minimal"
 							? "thinkingMinimal"
-							: "muted";
+							: level === "max"
+								? "thinkingMax"
+								: "muted";
 	return `${theme.fg(color, SEP_L())}${theme.fg(color, theme.inverse(` \uf0eb ${level} `))}${theme.fg(color, SEP_R())}`;
 }
 
 // Rainbow chip — 8-color ANSI 256 palette (red→orange→yellow→lime→cyan→sky→violet→pink)
-// Matches the gradient the shitty-pi ultrathink extension uses, but rendered statically
+// Mirrors the gradient used by the ultrathink extension, but rendered statically
 // (no animation) so the wallclock-conscious render path stays clean.
 const RAINBOW_PALETTE = [196, 208, 226, 118, 51, 39, 171, 213];
 
