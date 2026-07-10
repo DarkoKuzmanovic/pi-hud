@@ -39,7 +39,8 @@
   ],
   "scripts": {
     "test": "node --test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "npx @biomejs/biome check ."
   },
   "pi": {
     "extensions": [
