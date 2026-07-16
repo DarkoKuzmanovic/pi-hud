@@ -24,6 +24,7 @@
   ],
   "files": [
     "index.ts",
+    "machine-name.ts",
     "types.ts",
     "git.ts",
     "config.ts",

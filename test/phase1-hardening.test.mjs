@@ -170,3 +170,42 @@ test("padBetween keeps ANSI-styled output within terminal width", () => {
 		assert.default.ok(visibleWidth(rightOnly) <= 5, "right-only width was " + visibleWidth(rightOnly));
 	`);
 });
+
+
+test("machine name resolution honors overrides and falls back from Tailscale", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { resolveMachineName } = await import("./machine-name.ts");
+
+		let tailscaleCalls = 0;
+		const deps = {
+			readHostname: () => "os-host",
+			readTailscaleStatus: async () => {
+				tailscaleCalls++;
+				return JSON.stringify({ Self: { HostName: "darko-laptop" } });
+			},
+		};
+
+		assert.default.equal(
+			await resolveMachineName({ source: "tailscale", label: "  custom-node  " }, deps),
+			"custom-node",
+		);
+		assert.default.equal(tailscaleCalls, 0, "override must skip source lookup");
+		assert.default.equal(await resolveMachineName({ source: "hostname" }, deps), "os-host");
+		assert.default.equal(await resolveMachineName({ source: "tailscale" }, deps), "darko-laptop");
+
+		for (const readTailscaleStatus of [
+			async () => "not-json",
+			async () => JSON.stringify({ Self: {} }),
+			async () => { throw new Error("offline"); },
+		]) {
+			assert.default.equal(
+				await resolveMachineName(
+					{ source: "tailscale" },
+					{ readHostname: () => "fallback-host", readTailscaleStatus },
+				),
+				"fallback-host",
+			);
+		}
+	`);
+});

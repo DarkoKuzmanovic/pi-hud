@@ -198,3 +198,42 @@ test("renderFooterLine splits an extraRows {left,right} object row across the wi
 		assert.default.ok(row.indexOf("main") < row.indexOf("/tmp"), "left renders before right");
 	`);
 });
+
+
+test("project machine chip stays within the footer width", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { renderFooterLine } = await import("./render/footer.ts");
+		const { setAsciiMode, visibleWidth } = await import("./render/format.ts");
+		setAsciiMode(true);
+		const block = {
+			machineName: "a-very-long-machine-name-for-a-small-terminal",
+			chips: new Set(["project"]),
+			theme: { fg: (_name, text) => text, inverse: (text) => text, reset: () => "" },
+			totals: { input: 0, output: 0, cost: 0 },
+			activeUsage: { id: "unsupported", name: "X", icon: "?", status: "unknown", windows: [] },
+			thinkingLevel: "off",
+			activeStartedAt: null,
+			lastRunMs: null,
+			lastTps: null,
+			gitDirty: { text: "", isClean: true },
+			gitRemote: { ahead: 0, behind: 0, hasRemote: false },
+			gitLastCommit: { hash: "", subject: "", age: "" },
+			branch: "main",
+			extStatuses: new Map(),
+			ctx: {
+				cwd: "/tmp",
+				model: { id: "m" },
+				getContextUsage: () => ({ tokens: 0, contextWindow: 1 }),
+				sessionManager: { getSessionId: () => "" },
+			},
+		};
+		const layout = {
+			separator: " · ",
+			footer: { enabled: true, left: ["project"], right: [], extraRows: [] },
+		};
+
+		const line = renderFooterLine(block, layout)(20)[0];
+		assert.default.ok(visibleWidth(line) <= 20, "line width was " + visibleWidth(line));
+	`);
+});

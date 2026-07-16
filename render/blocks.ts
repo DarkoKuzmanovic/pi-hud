@@ -47,6 +47,7 @@ const PKG_ICON = "\udb80\udfd6"; // nf-md-package
 export interface BlockContext {
 	ctx: ExtensionContext;
 	theme: ThemeAccess;
+	machineName: string;
 	totals: SessionTotals;
 	activeUsage: ProviderUsage;
 	thinkingLevel: string;
@@ -124,7 +125,7 @@ export const KNOWN_BLOCKS = [
 export type KnownBlockId = (typeof KNOWN_BLOCKS)[number];
 
 export const BLOCK_DESCRIPTIONS: Record<KnownBlockId | "ext:<key>", string> = {
-	project: "Pi identity chip for the active HUD instance.",
+	project: "Pi identity chip with the resolved machine name.",
 	folder: "Current working directory basename as a compact folder chip.",
 	model: "Active model id, shortened for footer display.",
 	thinking: "Current thinking-level chip from Pi.",
@@ -160,8 +161,8 @@ interface BlockSpec {
 
 const BLOCKS: Record<KnownBlockId, BlockSpec> = {
 	project: {
-		plain: (c) => `${ICON_PROJECT()} `,
-		chip: (c) => chip(`${ICON_PROJECT()} `, c.theme),
+		plain: (c) => `${ICON_PROJECT()} - ${c.machineName}`,
+		chip: (c) => chip(`${ICON_PROJECT()} - ${c.machineName}`, c.theme),
 	},
 	folder: {
 		plain: (c) => `${ICON_FOLDER()} ${basename(c.ctx.cwd) || c.ctx.cwd}`,

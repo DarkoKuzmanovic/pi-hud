@@ -253,3 +253,31 @@ test("validateLayout warns for bad chip ids like other block lists", () => {
 		assert.default.deepEqual(validateLayout(DEFAULT_LAYOUT), []);
 	`);
 });
+
+
+test("machineName config defaults, merges, and validates source plus override", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { DEFAULT_LAYOUT, mergeLayout, validateLayout } = await import("./config.ts");
+
+		assert.default.deepEqual(DEFAULT_LAYOUT.machineName, { source: "hostname" });
+		assert.default.deepEqual(
+			mergeLayout({ machineName: { source: "tailscale", label: "travel-node" } }).machineName,
+			{ source: "tailscale", label: "travel-node" },
+		);
+		assert.default.deepEqual(
+			mergeLayout({ machineName: { label: "desk" } }).machineName,
+			{ source: "hostname", label: "desk" },
+		);
+		assert.default.deepEqual(
+			validateLayout({ machineName: { source: "tailscale", label: "travel-node" } }),
+			[],
+		);
+
+		const invalid = { machineName: { source: "magic-dns", label: 42 } };
+		const text = validateLayout(invalid).map((issue) => issue.path + " " + issue.message).join("\n");
+		assert.default.match(text, /machineName\.source.*hostname.*tailscale/);
+		assert.default.match(text, /machineName\.label.*string/);
+		assert.default.deepEqual(mergeLayout(invalid).machineName, DEFAULT_LAYOUT.machineName);
+	`);
+});

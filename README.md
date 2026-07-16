@@ -76,6 +76,10 @@ Current default layout:
 ```jsonc
 {
   "separator": " · ",
+  "machineName": {
+    "source": "hostname"
+    // "label": "darko-laptop"
+  },
   "footer": {
     "enabled": true,
     "left": ["cwd", "model", "thinking", "ext:model-prompts", "context"],
@@ -89,6 +93,9 @@ Current default layout:
   "chips": ["project", "folder", "model", "thinking", "context", "ext:model-prompts", "quota"]
 }
 ```
+
+
+`machineName.source` selects the label shown by the `project` block: `"hostname"` uses Node's local OS hostname, while `"tailscale"` reads `Self.HostName` from `tailscale status --json`. Tailscale lookup failures fall back to the OS hostname. Set a non-empty `machineName.label` to override either source. Machine-name resolution is cached outside the footer render path and refreshed by `/hud reload`.
 
 `/hud reload` surfaces warning-only validation issues such as unknown block ids, malformed rows, and empty separators. `/hud validate` checks the JSONC file without reloading, `/hud blocks` lists block descriptions, and validation never rewrites the file.
 

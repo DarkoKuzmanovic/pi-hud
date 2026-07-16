@@ -35,9 +35,20 @@ export interface FooterConfig {
 	extraRows: FooterRow[];
 }
 
+
+export type MachineNameSource = "hostname" | "tailscale";
+
+export interface MachineNameConfig {
+	source: MachineNameSource;
+	/** Optional non-empty display override. Takes precedence over source. */
+	label?: string;
+}
+
 export interface HudLayout {
 	/** Joins blocks within a footer side or extra row. */
 	separator: string;
+	/** Machine label rendered by the project identity block. */
+	machineName: MachineNameConfig;
 	footer: FooterConfig;
 	/** Block ids rendered with chip-style brackets at render time. Defaults to `DEFAULT_CHIPS`. */
 	chips: BlockId[];
@@ -51,6 +62,11 @@ export interface HudLayout {
 
 /** Palette names accepted for the layout `theme` key (named palettes + "random"). */
 const THEME_NAMES = new Set<string>([...PALETTE_NAMES, "random"]);
+const MACHINE_NAME_SOURCES = new Set<MachineNameSource>(["hostname", "tailscale"]);
+
+function isMachineNameSource(value: unknown): value is MachineNameSource {
+	return typeof value === "string" && MACHINE_NAME_SOURCES.has(value as MachineNameSource);
+}
 
 export interface LayoutValidationIssue {
 	severity: "warning";
@@ -81,6 +97,7 @@ export const DEFAULT_CHIPS: BlockId[] = [
 
 export const DEFAULT_LAYOUT: HudLayout = {
 	separator: " · ",
+	machineName: { source: "hostname" },
 	footer: {
 		enabled: true,
 left: ["cwd", "model", "thinking", "ext:model-prompts", "context"],
@@ -99,7 +116,7 @@ const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart 
 // Run /hud blocks for descriptions, /hud validate to check, and /hud layout to show this path.
 //
 // Available blocks:
-//   project      pi identity chip            sessionId   session uuid (dim)
+//   project      pi + machine identity         sessionId   session uuid (dim)
 //   sessionName  /name display name          quota       provider usage windows
 //   folder       📂 folder name              speed       tok/s
 //   model        🤖 active model             statusDot   provider status dot
@@ -116,6 +133,15 @@ const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart 
 {
   // Separator drawn between blocks in a footer side or extra row.
   "separator": " · ",
+
+
+  // Machine name shown in the project chip. "hostname" uses Node os.hostname();
+  // "tailscale" reads Self.HostName from \`tailscale status --json\`. A non-empty
+  // label overrides either source. Tailscale lookup failures fall back to hostname.
+  "machineName": {
+    "source": "hostname",
+    // "label": "darko-laptop"
+  },
 
   // Main footer line below the input box, plus optional full-width rows below it.
   "footer": {
@@ -323,6 +349,25 @@ export function validateLayout(raw: unknown): LayoutValidationIssue[] {
 		}
 	}
 
+
+	if ("machineName" in raw) {
+		if (!isRecord(raw.machineName)) {
+			warn(issues, "machineName", "must be an object");
+		} else {
+			const machineName = raw.machineName;
+			if ("source" in machineName && !isMachineNameSource(machineName.source)) {
+				warn(issues, "machineName.source", 'must be "hostname" or "tailscale"');
+			}
+			if ("label" in machineName) {
+				if (typeof machineName.label !== "string") {
+					warn(issues, "machineName.label", "must be a non-empty string");
+				} else if (machineName.label.trim().length === 0) {
+					warn(issues, "machineName.label", "empty label falls back to the configured source");
+				}
+			}
+		}
+	}
+
 	// Legacy keys from the mascot/shelf-widget era (removed). Still tolerated
 	// at load time — mergeLayout() folds "shelf.rows" into footer.extraRows so
 	// upgrading doesn't silently drop previously-visible rows — but flagged
@@ -384,6 +429,16 @@ export function mergeLayout(raw: unknown): HudLayout {
 	const r = raw as Record<string, unknown>;
 
 	if (typeof r.separator === "string" && r.separator.length > 0) base.separator = r.separator;
+
+
+	if (isRecord(r.machineName)) {
+		if (isMachineNameSource(r.machineName.source)) {
+			base.machineName.source = r.machineName.source;
+		}
+		if (typeof r.machineName.label === "string" && r.machineName.label.trim().length > 0) {
+			base.machineName.label = r.machineName.label.trim();
+		}
+	}
 
 	const footer = r.footer as Record<string, unknown> | undefined;
 	let explicitExtraRows: FooterRow[] | null = null;

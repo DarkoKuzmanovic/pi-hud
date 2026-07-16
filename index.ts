@@ -3,8 +3,10 @@ import type {
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
+import { hostname } from "node:os";
 import { visibleWidth } from "./render/format.js";
 import { TokenSpeedTracker } from "./token-speed.js";
+import { resolveMachineName } from "./machine-name.js";
 
 // Types
 import type { ProviderUsage, ThemeAccess } from "./types.js";
@@ -172,6 +174,8 @@ export default function piHud(pi: ExtensionAPI) {
 	// Layout config
 	const initialLayout = loadLayout();
 	let layout: HudLayout = initialLayout.layout;
+	let cachedMachineName = hostname().trim() || "unknown-host";
+	let machineNameRefreshGeneration = 0;
 	// Apply a persisted header palette at startup so the theme choice survives
 	// restarts. "random" (or an absent key) keeps the built-in random default.
 	if (layout.theme) setActivePalette(layout.theme);
@@ -181,6 +185,15 @@ export default function piHud(pi: ExtensionAPI) {
 
 	const requestRenderAll = (): void => {
 		footerTui?.requestRender();
+	};
+
+
+	const refreshMachineName = async (): Promise<void> => {
+		const generation = ++machineNameRefreshGeneration;
+		const nextName = await resolveMachineName(layout.machineName);
+		if (generation !== machineNameRefreshGeneration || nextName === cachedMachineName) return;
+		cachedMachineName = nextName;
+		requestRenderAll();
 	};
 
 	const unsupportedUsage = (provider?: string): ProviderUsage => ({
@@ -218,6 +231,7 @@ export default function piHud(pi: ExtensionAPI) {
 		ctx: activeCtx,
 		theme,
 		totals,
+		machineName: cachedMachineName,
 		activeUsage: getActiveUsage(activeCtx),
 		thinkingLevel: pi.getThinkingLevel(),
 		activeStartedAt,
@@ -354,6 +368,7 @@ export default function piHud(pi: ExtensionAPI) {
 	const install = (ctx: ExtensionContext) => {
 		installedCtx = ctx;
 		if (!ctx.hasUI) return;
+		void refreshMachineName();
 		void refreshActiveProvider(ctx);
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
@@ -675,6 +690,7 @@ export default function piHud(pi: ExtensionAPI) {
 		}
 		footerTui = null;
 		installedCtx = null;
+		machineNameRefreshGeneration++;
 		// Reset cached totals for new session
 		totals = initSessionTotals();
 		lastTps = null;
@@ -717,6 +733,7 @@ export default function piHud(pi: ExtensionAPI) {
 			if (arg === "reload") {
 				const res = loadLayout();
 				layout = res.layout;
+				await refreshMachineName();
 				requestRenderAll();
 				if (res.warning) {
 					ctx.ui.notify(res.warning, "warning");

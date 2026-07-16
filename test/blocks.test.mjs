@@ -309,3 +309,40 @@ test("renderGroup threads chip wrapping through shelf and footer block lists", (
 		assert.default.equal(safe.includes("["), false);
 	`);
 });
+
+
+test("project block renders the resolved machine name in plain and chip modes", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { renderBlock } = await import("./render/blocks.ts");
+		const { setAsciiMode } = await import("./render/format.ts");
+		setAsciiMode(true);
+		const block = {
+			machineName: "darko-laptop",
+			theme: { fg: (_name, text) => text, inverse: (text) => text, reset: () => "" },
+			totals: { input: 0, output: 0, cost: 0 },
+			activeUsage: { id: "unsupported", name: "X", icon: "?", status: "unknown", windows: [] },
+			thinkingLevel: "off",
+			activeStartedAt: null,
+			lastRunMs: null,
+			lastTps: null,
+			gitDirty: { text: "", isClean: true },
+			gitRemote: { ahead: 0, behind: 0, hasRemote: false },
+			gitLastCommit: { hash: "", subject: "", age: "" },
+			branch: "main",
+			extStatuses: new Map(),
+			ctx: {
+				cwd: "/tmp",
+				model: { id: "m" },
+				getContextUsage: () => ({ tokens: 0, contextWindow: 1 }),
+				sessionManager: { getSessionId: () => "" },
+			},
+		};
+
+		assert.default.equal(renderBlock("project", block), "π - darko-laptop");
+		assert.default.equal(
+			renderBlock("project", { ...block, chips: new Set(["project"]) }),
+			"[ π - darko-laptop ]",
+		);
+	`);
+});
