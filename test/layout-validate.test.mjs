@@ -281,3 +281,81 @@ test("machineName config defaults, merges, and validates source plus override", 
 		assert.default.deepEqual(mergeLayout(invalid).machineName, DEFAULT_LAYOUT.machineName);
 	`);
 });
+
+test("editor style defaults to marker and validates known values", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const {
+			DEFAULT_LAYOUT,
+			EDITOR_STYLES,
+			mergeLayout,
+			validateLayout,
+		} = await import("./config.ts");
+
+		assert.default.equal(DEFAULT_LAYOUT.editor, "marker");
+		assert.default.deepEqual(
+			[...EDITOR_STYLES],
+			["default", "marker", "border", "bracket", "pill", "double"],
+		);
+
+		for (const style of EDITOR_STYLES) {
+			assert.default.deepEqual(validateLayout({ editor: style }), []);
+			assert.default.equal(mergeLayout({ editor: style }).editor, style);
+		}
+
+		// Omitted key keeps default.
+		assert.default.equal(mergeLayout({}).editor, "marker");
+
+		// Unknown / malformed fall back to default and warn.
+		const unknown = validateLayout({ editor: "neon" });
+		assert.default.equal(unknown.length, 1);
+		assert.default.match(unknown[0].path + " " + unknown[0].message, /editor.*neon/);
+		assert.default.equal(mergeLayout({ editor: "neon" }).editor, "marker");
+		assert.default.equal(mergeLayout({ editor: 3 }).editor, "marker");
+		const nonString = validateLayout({ editor: 3 });
+		assert.default.match(nonString.map((i) => i.path + " " + i.message).join("\n"), /editor.*string/);
+	`);
+});
+
+test("editorPadding defaults to 0/0 and validates non-negative integers", () => {
+	runBunAssertions(String.raw`
+		const assert = await import("node:assert/strict");
+		const { DEFAULT_LAYOUT, mergeLayout, validateLayout } = await import("./config.ts");
+
+		assert.default.deepEqual(DEFAULT_LAYOUT.editorPadding, { top: 0, bottom: 0 });
+		assert.default.deepEqual(mergeLayout({}).editorPadding, { top: 0, bottom: 0 });
+
+		// Object form.
+		assert.default.deepEqual(
+			mergeLayout({ editorPadding: { top: 1, bottom: 2 } }).editorPadding,
+			{ top: 1, bottom: 2 },
+		);
+		// Single number applies to both sides.
+		assert.default.deepEqual(
+			mergeLayout({ editorPadding: 1 }).editorPadding,
+			{ top: 1, bottom: 1 },
+		);
+		// Partial object fills the other side from default 0.
+		assert.default.deepEqual(
+			mergeLayout({ editorPadding: { top: 2 } }).editorPadding,
+			{ top: 2, bottom: 0 },
+		);
+
+		assert.default.deepEqual(validateLayout({ editorPadding: { top: 0, bottom: 3 } }), []);
+		assert.default.deepEqual(validateLayout({ editorPadding: 1 }), []);
+
+		const bad = validateLayout({ editorPadding: { top: -1, bottom: 1.5, extra: true } });
+		const text = bad.map((i) => i.path + " " + i.message).join("\n");
+		assert.default.match(text, /editorPadding\.top/);
+		assert.default.match(text, /editorPadding\.bottom/);
+		// Malformed falls back to defaults on merge.
+		assert.default.deepEqual(
+			mergeLayout({ editorPadding: { top: -1, bottom: "x" } }).editorPadding,
+			{ top: 0, bottom: 0 },
+		);
+		assert.default.deepEqual(
+			mergeLayout({ editorPadding: "nope" }).editorPadding,
+			{ top: 0, bottom: 0 },
+		);
+	`);
+});

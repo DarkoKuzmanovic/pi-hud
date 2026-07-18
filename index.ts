@@ -2,9 +2,7 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { hostname } from "node:os";
-import { visibleWidth } from "./render/format.js";
 import { TokenSpeedTracker } from "./token-speed.js";
 import { resolveMachineName } from "./machine-name.js";
 
@@ -24,6 +22,8 @@ import {
 } from "./providers/minimax.js";
 import { fetchUmansUsage, umansToProvider } from "./providers/umans.js";
 import { fetchOpenferenceUsage, openferenceToProvider } from "./providers/openference.js";
+import { fetchKimiUsage, kimiToProvider } from "./providers/kimi.js";
+import { fetchGrokUsage, grokToProvider } from "./providers/grok.js";
 import { resolveProviderId } from "./provider-routing.js";
 
 // Git
@@ -46,6 +46,13 @@ import {
 	getActivePalette,
 } from "./render/header.js";
 import { setAsciiMode, isAsciiMode } from "./render/format.js";
+import {
+	applyEditorStyle,
+	formatBorderContext,
+	formatBorderCwd,
+	formatBorderModel,
+	type EditorSkinDeps,
+} from "./render/editors/index.js";
 
 // Layout config
 import {
@@ -53,6 +60,9 @@ import {
 	layoutPath,
 	validateLayoutFile,
 	writeThemeToLayout,
+	writeEditorToLayout,
+	EDITOR_STYLES,
+	isEditorStyle,
 	type HudLayout,
 	type LayoutValidationIssue,
 } from "./config.js";
@@ -143,12 +153,30 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "daily" }],
 	};
+	let kimiUsage: ProviderUsage = {
+		id: "kimi",
+		name: "Kimi",
+		icon: "\uf186",
+		status: "unknown",
+		message: "loading",
+		windows: [{ label: "5h" }, { label: "week" }],
+	};
+	let grokUsage: ProviderUsage = {
+		id: "grok",
+		name: "Grok",
+		icon: "\ud835\udd4f",
+		status: "unknown",
+		message: "loading",
+		windows: [{ label: "week" }, { label: "month" }],
+	};
 
 	let codexInFlight: Promise<void> | null = null;
 	let anthropicInFlight: Promise<void> | null = null;
 	let minimaxInFlight: Promise<void> | null = null;
 	let umansInFlight: Promise<void> | null = null;
 	let openferenceInFlight: Promise<void> | null = null;
+	let kimiInFlight: Promise<void> | null = null;
+	let grokInFlight: Promise<void> | null = null;
 	// Throttle for agent_start-driven Openference refreshes (excluded from the wall-clock timer).
 	let lastOpenferenceRefreshAt = 0;
 
@@ -217,6 +245,10 @@ export default function piHud(pi: ExtensionAPI) {
 				return umansUsage;
 			case "openference":
 				return openferenceUsage;
+			case "kimi":
+				return kimiUsage;
+			case "grok":
+				return grokUsage;
 			default:
 				return unsupportedUsage(ctx.model?.provider);
 		}
@@ -311,6 +343,26 @@ export default function piHud(pi: ExtensionAPI) {
 		return openferenceInFlight;
 	};
 
+	const refreshKimi = async () => {
+		if (kimiInFlight) return kimiInFlight;
+		kimiInFlight = (async () => {
+			kimiUsage = kimiToProvider(await fetchKimiUsage(), kimiUsage);
+		})().finally(() => {
+			kimiInFlight = null;
+		});
+		return kimiInFlight;
+	};
+
+	const refreshGrok = async () => {
+		if (grokInFlight) return grokInFlight;
+		grokInFlight = (async () => {
+			grokUsage = grokToProvider(await fetchGrokUsage(), grokUsage);
+		})().finally(() => {
+			grokInFlight = null;
+		});
+		return grokInFlight;
+	};
+
 
 
 	const refreshActiveProvider = (ctx: ExtensionContext) => {
@@ -325,6 +377,10 @@ export default function piHud(pi: ExtensionAPI) {
 				return refreshUmans();
 			case "openference":
 				return refreshOpenference();
+			case "kimi":
+				return refreshKimi();
+			case "grok":
+				return refreshGrok();
 			default:
 				return Promise.resolve();
 		}
@@ -447,6 +503,40 @@ export default function piHud(pi: ExtensionAPI) {
 		});
 	};
 
+	const buildEditorDeps = (sessionCtx: ExtensionContext): EditorSkinDeps => ({
+		isEnabled: () => enabled,
+		getFullTheme: () => (installedCtx ?? sessionCtx).ui.theme,
+		getModelLabel: () => {
+			const active = installedCtx ?? sessionCtx;
+			return formatBorderModel(active.model?.provider, active.model?.id);
+		},
+		getThinkingLevel: () => pi.getThinkingLevel(),
+		getContextLabel: () => {
+			const active = installedCtx ?? sessionCtx;
+			const usage = active.getContextUsage?.();
+			return formatBorderContext(
+				usage
+					? {
+							tokens: usage.tokens,
+							contextWindow: usage.contextWindow ?? active.model?.contextWindow,
+							percent: usage.percent,
+						}
+					: null,
+			);
+		},
+		getCwdLabel: () => formatBorderCwd((installedCtx ?? sessionCtx).cwd),
+		getBranch: () => {
+			const branch = cachedBranch.trim();
+			return branch.length > 0 ? branch : undefined;
+		},
+		isWorking: () => activeStartedAt !== null,
+		getPadding: () => layout.editorPadding,
+	});
+
+	const applyEditor = (sessionCtx: ExtensionContext): void => {
+		applyEditorStyle(sessionCtx.ui, layout.editor, buildEditorDeps(sessionCtx));
+	};
+
 	pi.on("session_start", (_event, ctx) => {
 		// Seed Anthropic usage from disk before kicking off any refresh so the footer
 		// shows last-known-good values immediately, even when a 429 prevents a fresh fetch.
@@ -471,111 +561,7 @@ export default function piHud(pi: ExtensionAPI) {
 			/* Session totals sync best-effort */
 		}
 
-		ctx.ui.setEditorComponent((tui, editorTheme, keybindings) => {
-				const fullTheme = ctx.ui.theme;
-				const editor = new (class extends CustomEditor {
-					render(width: number): string[] {
-						if (!enabled) return super.render(width);
-						const markerWidth = 3; // Fixed column: "▌  " or "↑3 " or "↓12 "
-						const innerWidth = Math.max(1, width - markerWidth);
-
-						// Render at innerWidth so text wraps correctly for the narrower column
-						const lines = super.render(innerWidth);
-						if (lines.length < 2) return lines;
-
-						const bgOpen = fullTheme.getBgAnsi("userMessageBg");
-						const bgClose = "\u001b[49m";
-						const resetAnsi = "\u001b[0m";
-						// biome-ignore lint/complexity/useRegexLiterals: regex literals trip noControlCharactersInRegex for ANSI escapes.
-						const sgrPattern = new RegExp("\\u001b\\[[0-9;]*m", "g");
-						// biome-ignore lint/complexity/useRegexLiterals: regex literals trip noControlCharactersInRegex for ANSI escapes.
-						const resetPattern = new RegExp("\\u001b\\[0m", "g");
-						const markerRaw = "\u258C"; // ▌ LEFT HALF BLOCK
-
-						// Detect scroll indicators from the original border lines.
-						// Top border (lines[0]): when scrolled up contains "↑ N more"
-						// Bottom border (lines[last]): when scrolled down contains "↓ N more"
-						// Autocomplete lines appear after the bottom border — preserve them.
-						const topBorder = lines[0] ?? "";
-						const scrollUpMatch = topBorder.match(/↑ (\d+) more/);
-
-						// Find the bottom border: it's the last line that starts with border chars
-						// or contains the scroll-down indicator.
-						// Autocomplete lines come after it.
-						let bottomBorderIdx = -1;
-						for (let i = lines.length - 1; i >= 1; i--) {
-							const stripped = lines[i].replace(sgrPattern, "").trim();
-							if (stripped.startsWith("─") || /↓ \d+ more/.test(stripped)) {
-								bottomBorderIdx = i;
-								break;
-							}
-						}
-
-						const scrollDownMatch = bottomBorderIdx >= 0
-							? lines[bottomBorderIdx].match(/↓ (\d+) more/)
-							: null;
-
-						// Extract content lines (between borders) and autocomplete lines (after bottom border)
-						const content = bottomBorderIdx >= 0
-							? lines.slice(1, bottomBorderIdx)
-							: lines.slice(1, -1);
-						const autocompleteLines = bottomBorderIdx >= 0 && bottomBorderIdx < lines.length - 1
-							? lines.slice(bottomBorderIdx + 1)
-							: [];
-
-						// Build the marker column: ▌ in borderColor (thinking level / bash mode),
-						// or scroll indicator replaces ▌ on that line. Padded to markerWidth.
-						const makeMarker = (indicator?: string): string => {
-							const glyph = indicator ?? markerRaw;
-							const styled = this.borderColor(glyph);
-							const styledVisible = indicator ? indicator.length : 1;
-							const pad = " ".repeat(Math.max(0, markerWidth - styledVisible));
-							return `${styled}${pad}`;
-						};
-
-						const rendered: string[] = [];
-
-						// Top blank line with ▌ (or scroll-up indicator)
-						const topMarker = scrollUpMatch
-							? makeMarker(`↑${scrollUpMatch[1]}`)
-							: makeMarker();
-						rendered.push(`${bgOpen}${topMarker}${bgOpen}${" ".repeat(Math.max(0, innerWidth))}${bgClose}`);
-
-						// Content lines: ▌ + bg-colored text
-						for (const line of content) {
-							// Re-anchor background after any \x1b[0m resets inside the line
-							// (cursor highlight, color codes, etc.)
-							const repaired = line.replace(resetPattern, `${resetAnsi}${bgOpen}`);
-							const w = visibleWidth(line);
-							const padded = w < innerWidth
-								? repaired + " ".repeat(innerWidth - w)
-								: repaired;
-							rendered.push(`${bgOpen}${makeMarker()}${bgOpen}${padded}${bgClose}`);
-						}
-
-						// Bottom blank line with ▌ (or scroll-down indicator)
-						const bottomMarker = scrollDownMatch
-							? makeMarker(`↓${scrollDownMatch[1]}`)
-							: makeMarker();
-						rendered.push(`${bgOpen}${bottomMarker}${bgOpen}${" ".repeat(innerWidth)}${bgClose}`);
-
-						// Autocomplete lines: rendered at innerWidth by parent, pad to full width
-						for (const acLine of autocompleteLines) {
-							const w = visibleWidth(acLine);
-							const pad = w < width
-								? " ".repeat(width - w)
-								: "";
-							rendered.push(acLine + pad);
-						}
-
-						// Trailing empty line for spacing
-						rendered.push("");
-
-						return rendered;
-					}
-				})(tui, editorTheme, keybindings);
-				return editor;
-			});
+		applyEditor(ctx);
 
 		ctx.ui.setHeader((_tui, theme) => ({
 			render(width: number): string[] {
@@ -702,7 +688,7 @@ export default function piHud(pi: ExtensionAPI) {
 
 	pi.registerCommand("hud", {
 		description:
-			"Manage the HUD: /hud on|off|refresh|reload|layout|blocks|validate|status|theme [name]|ascii",
+			"Manage the HUD: /hud on|off|refresh|reload|layout|blocks|validate|status|editor [name]|theme [name]|ascii",
 		handler: async (args, ctx) => {
 			const arg = (args ?? "").trim().toLowerCase();
 
@@ -734,6 +720,7 @@ export default function piHud(pi: ExtensionAPI) {
 				const res = loadLayout();
 				layout = res.layout;
 				await refreshMachineName();
+				applyEditor(installedCtx ?? ctx);
 				requestRenderAll();
 				if (res.warning) {
 					ctx.ui.notify(res.warning, "warning");
@@ -746,7 +733,7 @@ export default function piHud(pi: ExtensionAPI) {
 					);
 					return;
 				}
-				ctx.ui.notify("HUD layout reloaded", "info");
+				ctx.ui.notify(`HUD layout reloaded (editor: ${layout.editor})`, "info");
 				return;
 			}
 			if (arg === "layout") {
@@ -769,6 +756,38 @@ export default function piHud(pi: ExtensionAPI) {
 					`HUD layout warnings (${result.path})\n${formatLayoutValidationIssues(result.issues)}`,
 					"warning",
 				);
+				return;
+			}
+
+			// --- editor skin ---
+			if (arg === "editor" || arg.startsWith("editor ")) {
+				const styleName = arg === "editor" ? "" : arg.slice(7).trim();
+				if (!styleName) {
+					const names = EDITOR_STYLES.map((n) =>
+						n === layout.editor ? `*${n}*` : n,
+					).join(", ");
+					ctx.ui.notify(`HUD editors: ${names}`, "info");
+					return;
+				}
+				if (!isEditorStyle(styleName)) {
+					ctx.ui.notify(
+						`Unknown editor. Use: ${EDITOR_STYLES.join(", ")}`,
+						"error",
+					);
+					return;
+				}
+				layout.editor = styleName;
+				applyEditor(installedCtx ?? ctx);
+				requestRenderAll();
+				const persisted = writeEditorToLayout(styleName);
+				if (persisted.ok) {
+					ctx.ui.notify(`HUD editor: ${styleName}`, "info");
+				} else {
+					ctx.ui.notify(
+						`HUD editor: ${styleName} (applied, but couldn't save to layout: ${persisted.error})`,
+						"warning",
+					);
+				}
 				return;
 			}
 
@@ -822,10 +841,13 @@ export default function piHud(pi: ExtensionAPI) {
 			// --- status (default) ---
 			ctx.ui.notify(
 				[
+					`Editor: ${layout.editor}`,
 					`Codex: ${codexUsage.status}${codexUsage.message ? ` (${codexUsage.message})` : ""}`,
 					`Anthropic: ${anthropicUsage.status}${anthropicUsage.message ? ` (${anthropicUsage.message})` : ""}`,
 					`MiniMax: ${minimaxUsage.status}${minimaxUsage.message ? ` (${minimaxUsage.message})` : ""}`,
 					`Umans: ${umansUsage.status}${umansUsage.message ? ` (${umansUsage.message})` : ""}`,
+					`Kimi: ${kimiUsage.status}${kimiUsage.message ? ` (${kimiUsage.message})` : ""}`,
+					`Grok: ${grokUsage.status}${grokUsage.message ? ` (${grokUsage.message})` : ""}`,
 				].join("\n"),
 				"info",
 			);

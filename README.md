@@ -11,6 +11,8 @@ A configurable terminal HUD for [Pi](https://github.com/earendil-works/pi-coding
 - [Install](#install)
 - [Configuration](#configuration)
   - [Layout file](#layout-file)
+    - [Chip styling](#chip-styling)
+    - [Input-box skins](#input-box-skins)
   - [Blocks](#blocks)
 - [Usage](#usage)
   - [Slash commands](#slash-commands)
@@ -90,7 +92,10 @@ Current default layout:
       ["extStatuses"]
     ]
   },
-  "chips": ["project", "folder", "model", "thinking", "context", "ext:model-prompts", "quota"]
+  "chips": ["project", "folder", "model", "thinking", "context", "ext:model-prompts", "quota"],
+  // Input-box skin: "default" | "marker" | "border" | "bracket" | "pill" | "double"
+  "editor": "marker",
+  "editorPadding": { "top": 0, "bottom": 0 }
 }
 ```
 
@@ -123,6 +128,25 @@ Examples:
 
 `ext:<key>` is accepted whenever the referenced extension status is registered. `/hud validate` reports unknown ids in `chips` the same way it does for footer rows.
 
+#### Input-box skins
+
+The top-level `editor` key selects how the prompt input box is drawn:
+
+| Value | Look |
+| --- | --- |
+| `default` | Stock Pi editor (no custom component) |
+| `marker` | Left `▌` gutter + `userMessageBg` (pi-hud default) |
+| `border` | Keep the `─` box; put model/thinking/ctx/cwd into the frame |
+| `bracket` | Sharp box-drawing frame (`┌─┐` / `│` / `└─┘`) |
+| `pill` | Rounded box-drawing frame (`╭─╮` / `│` / `╰─╯`) |
+| `double` | Heavy double-line frame (`╔═╗` / `║` / `╚═╝`) |
+
+Change it in the layout file and `/hud reload`, or live with `/hud editor <name>` (also persists to the layout file).
+
+`editorPadding` adds blank lines above and/or below the input box (integers `0..8`, default `{ "top": 0, "bottom": 0 }`). A single number sets both sides (`"editorPadding": 1`).
+
+
+
 ### Blocks
 
 Run `/hud blocks` for the authoritative block list. Current block ids:
@@ -150,6 +174,8 @@ quota, extStatuses, ext:<key>
 /hud layout      Show the layout file path
 /hud blocks      List supported layout blocks
 /hud validate    Validate the on-disk layout without mutating it
+/hud editor      List input-box skins (* marks active)
+/hud editor NAME Switch skin and save to layout
 /hud theme       List themes
 /hud theme NAME  Set the next-session theme
 /hud ascii       Toggle ASCII icon mode
@@ -161,6 +187,7 @@ quota, extStatuses, ext:<key>
 
 - Registers a footer renderer with `ctx.ui.setFooter()`.
 - Registers a session-start header with `ctx.ui.setHeader()`.
+- Optionally replaces the input editor via `ctx.ui.setEditorComponent()` (`editor` layout key: default/marker/border/bracket/pill/double).
 - Uses a declarative block registry (`render/blocks.ts`) so footer layout can be rearranged without code changes.
 - Fetches provider quota asynchronously with one in-flight request per provider.
 - Refreshes quota only when cached provider data is stale, and re-renders only when visible data changes.

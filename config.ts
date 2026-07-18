@@ -38,6 +38,58 @@ export interface FooterConfig {
 
 export type MachineNameSource = "hostname" | "tailscale";
 
+export const EDITOR_STYLES = [
+	"default",
+	"marker",
+	"border",
+	"bracket",
+	"pill",
+	"double",
+] as const;
+export type EditorStyle = (typeof EDITOR_STYLES)[number];
+const EDITOR_STYLE_SET = new Set<string>(EDITOR_STYLES);
+
+export function isEditorStyle(value: unknown): value is EditorStyle {
+	return typeof value === "string" && EDITOR_STYLE_SET.has(value);
+}
+
+/** Blank lines above/below the input box. Integers ≥ 0 (clamped to EDITOR_PADDING_MAX). */
+export interface EditorPadding {
+	top: number;
+	bottom: number;
+}
+
+export const EDITOR_PADDING_MAX = 8;
+export const DEFAULT_EDITOR_PADDING: EditorPadding = { top: 0, bottom: 0 };
+
+function isNonNegInt(value: unknown): value is number {
+	return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+/** Clamp a padding count into the accepted range. */
+export function clampEditorPadding(value: number): number {
+	if (!Number.isFinite(value) || value < 0) return 0;
+	return Math.min(Math.floor(value), EDITOR_PADDING_MAX);
+}
+
+/**
+ * Normalize editorPadding from JSONC: a single number applies to both sides;
+ * a partial object fills missing sides with 0. Returns null when unusable.
+ */
+export function normalizeEditorPadding(raw: unknown): EditorPadding | null {
+	if (typeof raw === "number") {
+		if (!isNonNegInt(raw)) return null;
+		const n = clampEditorPadding(raw);
+		return { top: n, bottom: n };
+	}
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+	const o = raw as Record<string, unknown>;
+	const top = "top" in o ? o.top : 0;
+	const bottom = "bottom" in o ? o.bottom : 0;
+	if (!isNonNegInt(top) || !isNonNegInt(bottom)) return null;
+	return { top: clampEditorPadding(top), bottom: clampEditorPadding(bottom) };
+}
+
 export interface MachineNameConfig {
 	source: MachineNameSource;
 	/** Optional non-empty display override. Takes precedence over source. */
@@ -58,6 +110,14 @@ export interface HudLayout {
 	 * default. Written back by `/hud theme <name>`.
 	 */
 	theme?: string;
+	/**
+	 * Input-box skin. `default` = stock Pi editor; `marker` = ▌ gutter + message bg;
+	 * `border` = keep the box border and put status into the frame;
+	 * `bracket` / `pill` / `double` = full box-drawing frames (sharp / rounded / heavy).
+	 */
+	editor: EditorStyle;
+	/** Blank lines above/below the input box. Default { top: 0, bottom: 0 }. */
+	editorPadding: EditorPadding;
 }
 
 /** Palette names accepted for the layout `theme` key (named palettes + "random"). */
@@ -109,6 +169,8 @@ left: ["cwd", "model", "thinking", "ext:model-prompts", "context"],
 		],
 	},
 	chips: [...DEFAULT_CHIPS],
+	editor: "marker",
+	editorPadding: { top: 0, bottom: 0 },
 };
 
 /** The on-disk default template, with comments documenting every knob. */
@@ -162,12 +224,26 @@ const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart 
   // is a block id — \`ext:<key>\` is also accepted as long as the referenced
   // extension status is registered. Example for chipping plain blocks:
   //   "chips": ["tokens", "cost", "branch", "dirty", "speed"]
-"chips": ["project", "folder", "model", "thinking", "context", "ext:model-prompts", "quota"]
+  "chips": ["project", "folder", "model", "thinking", "context", "ext:model-prompts", "quota"],
 
   // Header gradient palette applied on startup. One of electric, sunset, ocean,
   // aurora, inferno, or "random" (re-randomize each session). Omit to keep the
   // random default. \`/hud theme <name>\` applies it live and writes it here.
   // "theme": "ocean"
+
+  // Input-box skin. One of:
+  //   default  stock Pi editor (no custom component)
+  //   marker   left ▌ gutter + userMessageBg (pi-hud default)
+  //   border   keep ─ box border; model/ctx/cwd status in the frame
+  //   bracket  sharp box ┌─┐│└─┘
+  //   pill     rounded box ╭─╮│╰─╯
+  //   double   heavy box ╔═╗║╚═╝
+  // \`/hud editor <name>\` applies live and writes it here.
+  "editor": "marker",
+
+  // Blank lines above/below the input box (integers 0..8). A single number
+  // sets both sides: "editorPadding": 1. Default is no extra padding.
+  "editorPadding": { "top": 0, "bottom": 0 }
 }
 `;
 
@@ -419,6 +495,54 @@ export function validateLayout(raw: unknown): LayoutValidationIssue[] {
 		}
 	}
 
+	if ("editor" in raw) {
+		if (typeof raw.editor !== "string") {
+			warn(issues, "editor", "must be a string");
+		} else if (!isEditorStyle(raw.editor)) {
+			warn(
+				issues,
+				"editor",
+				`unknown editor "${raw.editor}"; expected ${EDITOR_STYLES.join(", ")}`,
+			);
+		}
+	}
+
+	if ("editorPadding" in raw) {
+		const p = raw.editorPadding;
+		if (typeof p === "number") {
+			if (!Number.isInteger(p) || p < 0) {
+				warn(issues, "editorPadding", "must be a non-negative integer or { top, bottom }");
+			} else if (p > EDITOR_PADDING_MAX) {
+				warn(
+					issues,
+					"editorPadding",
+					`values above ${EDITOR_PADDING_MAX} are clamped to ${EDITOR_PADDING_MAX}`,
+				);
+			}
+		} else if (!p || typeof p !== "object" || Array.isArray(p)) {
+			warn(issues, "editorPadding", "must be a non-negative integer or { top, bottom }");
+		} else {
+			const o = p as Record<string, unknown>;
+			for (const side of ["top", "bottom"] as const) {
+				if (!(side in o)) continue;
+				const v = o[side];
+				if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
+					warn(
+						issues,
+						`editorPadding.${side}`,
+						"must be a non-negative integer",
+					);
+				} else if (v > EDITOR_PADDING_MAX) {
+					warn(
+						issues,
+						`editorPadding.${side}`,
+						`values above ${EDITOR_PADDING_MAX} are clamped to ${EDITOR_PADDING_MAX}`,
+					);
+				}
+			}
+		}
+	}
+
 	return issues;
 }
 
@@ -484,6 +608,15 @@ export function mergeLayout(raw: unknown): HudLayout {
 	// left undefined so startup keeps the built-in random default.
 	if (typeof r.theme === "string" && THEME_NAMES.has(r.theme)) {
 		base.theme = r.theme;
+	}
+
+	if (isEditorStyle(r.editor)) {
+		base.editor = r.editor;
+	}
+
+	if ("editorPadding" in r) {
+		const pad = normalizeEditorPadding(r.editorPadding);
+		if (pad) base.editorPadding = pad;
 	}
 
 	return base;
@@ -586,6 +719,43 @@ export function writeThemeToLayout(
 			next =
 				text.slice(0, braceIdx + 1) +
 				`\n  "theme": "${name}",` +
+				text.slice(braceIdx + 1);
+		}
+		writeFileSync(path, next, "utf8");
+		return { ok: true };
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return { ok: false, error: msg };
+	}
+}
+
+/**
+ * Persist the chosen input-box skin to the layout .jsonc by rewriting only
+ * the `editor` value — comments and formatting are preserved. Same insertion
+ * strategy as writeThemeToLayout.
+ */
+export function writeEditorToLayout(
+	style: EditorStyle,
+): { ok: boolean; error?: string } {
+	const path = layoutPath();
+	try {
+		if (!existsSync(path)) {
+			mkdirSync(dirname(path), { recursive: true });
+			writeFileSync(path, DEFAULT_FILE, "utf8");
+		}
+		const text = readFileSync(path, "utf8");
+		const editorKey = /"editor"\s*:\s*"[^"]*"/;
+		let next: string;
+		if (editorKey.test(text)) {
+			next = text.replace(editorKey, `"editor": "${style}"`);
+		} else {
+			const braceIdx = text.indexOf("{");
+			if (braceIdx === -1) {
+				return { ok: false, error: "layout file has no JSON object" };
+			}
+			next =
+				text.slice(0, braceIdx + 1) +
+				`\n  "editor": "${style}",` +
 				text.slice(braceIdx + 1);
 		}
 		writeFileSync(path, next, "utf8");
