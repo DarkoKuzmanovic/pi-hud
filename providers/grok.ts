@@ -62,8 +62,9 @@ export async function fetchGrokUsage(): Promise<GrokFetchResult> {
 			const period = weeklyCfg?.currentPeriod as Record<string, unknown> | undefined;
 			if (period?.type === "USAGE_PERIOD_TYPE_WEEKLY") {
 				const raw = weeklyCfg?.creditUsagePercent;
-				usage.weeklyUsedPercent =
-					typeof raw === "number" && Number.isFinite(raw) ? raw : 0;
+				if (typeof raw === "number" && Number.isFinite(raw)) {
+					usage.weeklyUsedPercent = raw;
+				}
 				usage.weeklyResetAt = parseIso(weeklyCfg?.billingPeriodEnd);
 			}
 		} catch {

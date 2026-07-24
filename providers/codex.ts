@@ -1,4 +1,4 @@
-import { readCodexAuth, readAuth, writeAuth } from "./shared.js";
+import { readCodexAuth } from "./shared.js";
 import { fetchWithAuth, FetchError } from "./shared.js";
 import type { CodexUsageResponse, CodexFetchResult, ProviderUsage } from "../types.js";
 import { spawn } from "node:child_process";
@@ -6,7 +6,9 @@ import { spawn } from "node:child_process";
 function isValidCodexResponse(value: unknown): value is CodexUsageResponse {
 	if (!value || typeof value !== "object") return false;
 	const rateLimit = (value as Record<string, unknown>).rate_limit;
-	return rateLimit === undefined || (typeof rateLimit === "object" && rateLimit !== null);
+	if (rateLimit === undefined || typeof rateLimit !== "object" || rateLimit === null) return false;
+	const rl = rateLimit as Record<string, unknown>;
+	return rl.primary_window !== undefined || rl.secondary_window !== undefined;
 }
 
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/codex/usage";
@@ -47,7 +49,6 @@ async function fetchCodexUsageViaCurl(access: string, accountId: string): Promis
 	const response = await runCurlConfig([
 		"silent",
 		"show-error",
-		"location",
 		"max-time = 15",
 		'write-out = "\\nHTTP_STATUS:%{http_code}"',
 		`url = "${CODEX_USAGE_URL}"`,
@@ -138,6 +139,7 @@ async function refreshCodexAuth(refreshToken: string): Promise<RefreshedCodexAut
 				grant_type: "refresh_token",
 				refresh_token: refreshToken,
 			}),
+			signal: AbortSignal.timeout(15_000),
 		});
 		if (!res.ok) return null;
 		const parsed: unknown = await res.json();
@@ -150,19 +152,6 @@ async function refreshCodexAuth(refreshToken: string): Promise<RefreshedCodexAut
 	} catch {
 		return null;
 	}
-}
-
-function persistCodexAuth(refreshed: RefreshedCodexAuth): void {
-	const auth = readAuth();
-	const previous = auth["openai-codex"];
-	if (!previous || typeof previous !== "object") return;
-	auth["openai-codex"] = {
-		...previous,
-		access: refreshed.access,
-		refresh: refreshed.refresh ?? (previous as { refresh?: unknown }).refresh,
-		expires: refreshed.expires ?? (previous as { expires?: unknown }).expires,
-	};
-	writeAuth(auth);
 }
 
 async function fetchCodexUsageWithAccess(access: string, accountId: string): Promise<CodexFetchResult> {
@@ -198,7 +187,6 @@ export async function fetchCodexUsage(): Promise<CodexFetchResult> {
 		}
 		const refreshed = await refreshCodexAuth(cred.refresh);
 		if (!refreshed) return { usage: null, status: "auth-needed", message: err.message };
-		persistCodexAuth(refreshed);
 		try {
 			return await fetchCodexUsageWithAccess(refreshed.access, cred.accountId);
 		} catch (retryErr) {

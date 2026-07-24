@@ -50,8 +50,23 @@ export function createBorderEditorFactory(deps: EditorSkinDeps) {
 					}
 				}
 
-				lines[0] = fitBorder(topLeft, topRight, width, borderColor);
-				lines[bottomBorderIdx] = fitBorder(bottomLeft, bottomRight, width, borderColor);
+				// Extract scroll indicators before overwriting borders
+				const scrollUpMatch = lines[0].match(/↑ (\d+) more/);
+				const scrollDownMatch =
+					bottomBorderIdx >= 0 ? lines[bottomBorderIdx].match(/↓ (\d+) more/) : null;
+
+				lines[0] = fitBorder(
+					topLeft + (scrollUpMatch ? ` ↑${scrollUpMatch[1]} ` : ""),
+					topRight,
+					width,
+					borderColor,
+				);
+				lines[bottomBorderIdx] = fitBorder(
+					bottomLeft + (scrollDownMatch ? ` ↓${scrollDownMatch[1]} ` : ""),
+					bottomRight,
+					width,
+					borderColor,
+				);
 				return withEditorPadding(lines, deps.getPadding());
 			}
 		})(tui, editorTheme, keybindings);

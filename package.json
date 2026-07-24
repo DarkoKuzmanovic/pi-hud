@@ -1,6 +1,6 @@
 {
   "name": "pi-hud",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Status HUD for Pi coding agent — displays provider quota, session stats, git status, and model info in the terminal footer and header",
   "author": "Darko Kuzmanovic",
   "license": "MIT",

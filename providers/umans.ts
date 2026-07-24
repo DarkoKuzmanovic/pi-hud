@@ -17,8 +17,23 @@ interface UmansUsageResponse {
 	usage?: { requests_in_window?: number | null; concurrent_sessions?: number | null };
 }
 
+function isFiniteNum(value: unknown): boolean {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
 function isValidUmansResponse(value: unknown): value is UmansUsageResponse {
-	return !!value && typeof value === "object";
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const r = value as Record<string, unknown>;
+	const usage = r.usage as Record<string, unknown> | undefined;
+	const limits = r.limits as Record<string, unknown> | undefined;
+	const requests = limits?.requests as Record<string, unknown> | undefined;
+	const concurrency = limits?.concurrency as Record<string, unknown> | undefined;
+	return (
+		isFiniteNum(usage?.requests_in_window) ||
+		isFiniteNum(usage?.concurrent_sessions) ||
+		isFiniteNum(requests?.limit) ||
+		isFiniteNum(concurrency?.limit)
+	);
 }
 
 /** Map the rolling-window length (seconds) to the closest HUD window label. */

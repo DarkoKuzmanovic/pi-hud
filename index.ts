@@ -114,6 +114,18 @@ export default function piHud(pi: ExtensionAPI) {
 	const tokenSpeed = new TokenSpeedTracker();
 	let lastTpsRenderAt = 0;
 
+	// In-flight provider refreshes. The host invokes session_shutdown synchronously
+	// and does not await it, so we cannot cancel or drain these. We only (a) attach
+	// a rejection handler so a late failure cannot surface as an unhandled rejection
+	// in the next session, and (b) keep a registry that shutdown clears. Per-provider
+	// in-flight dedup plus read-only credentials keep a late completion from
+	// corrupting state across sessions.
+	const inFlightRefreshes = new Set<Promise<unknown>>();
+	const trackRefresh = (p: Promise<unknown>): void => {
+		inFlightRefreshes.add(p);
+		void p.catch(() => {}).finally(() => inFlightRefreshes.delete(p));
+	};
+
 	// Provider usage state
 	let codexUsage: ProviderUsage = {
 		id: "codex",
@@ -440,8 +452,8 @@ export default function piHud(pi: ExtensionAPI) {
 	const install = (ctx: ExtensionContext) => {
 		installedCtx = ctx;
 		if (!ctx.hasUI) return;
-		void refreshMachineName();
-		void refreshActiveProvider(ctx);
+		void refreshMachineName().catch(() => {});
+		trackRefresh(refreshActiveProvider(ctx).then(() => requestRenderAll()).catch(() => requestRenderAll()));
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			footerTui = tui;
@@ -468,13 +480,13 @@ export default function piHud(pi: ExtensionAPI) {
 					Date.now() - (activeUsage.updatedAt ?? 0) > QUOTA_REFRESH_MS;
 				if (needsQuotaRefresh) {
 					const prevUsage = stableUsageKey(activeUsage);
-					void refreshActiveProvider(activeCtx).then(() => {
+					trackRefresh(refreshActiveProvider(activeCtx).then(() => {
 						const latestCtx = installedCtx ?? activeCtx;
 						const newUsage = stableUsageKey(getActiveUsage(latestCtx));
 						if (newUsage !== prevUsage) {
 							requestRenderAll();
 						}
-					});
+					}).catch(() => {}));
 				}
 				const needsGitRefresh = Date.now() - lastGitAt > GIT_REFRESH_MS;
 				if (needsGitRefresh) {
@@ -511,8 +523,8 @@ export default function piHud(pi: ExtensionAPI) {
 							theme,
 						);
 						return renderFooterLine(block, layout)(width);
-					} catch (err: any) {
-						return [theme.fg("error", `pi-hud: ${err?.message ?? err}`)];
+					} catch (err: unknown) {
+						return [theme.fg("error", `pi-hud: ${err instanceof Error ? err.message : String(err)}`)];
 					}
 				},
 			};
@@ -613,7 +625,26 @@ export default function piHud(pi: ExtensionAPI) {
 
 	pi.on("model_select", (_event, ctx) => {
 		installedCtx = ctx;
-		void refreshActiveProvider(ctx);
+		trackRefresh(refreshActiveProvider(ctx).then(() => requestRenderAll()).catch(() => requestRenderAll()));
+		requestRenderAll();
+	});
+
+	pi.on("session_tree", (_event, ctx) => {
+		// /tree branch navigation changes history; rebuild cumulative totals from
+		// the new branch (mirrors the session_start resync) so the footer's
+		// token/cost counters don't keep accumulating the abandoned branch.
+		totals = initSessionTotals();
+		try {
+			for (const entry of ctx.sessionManager.getBranch()) {
+				if (entry.type !== "message") continue;
+				const message = (entry as { message?: unknown }).message;
+				if (!message || typeof message !== "object") continue;
+				if ((message as { role?: unknown }).role !== "assistant") continue;
+				accumulateMessage(message, totals);
+			}
+		} catch {
+			/* Session totals sync best-effort */
+		}
 		requestRenderAll();
 	});
 
@@ -628,7 +659,7 @@ export default function piHud(pi: ExtensionAPI) {
 			Date.now() - lastOpenferenceRefreshAt > OPENFERENCE_REFRESH_MS
 		) {
 			lastOpenferenceRefreshAt = Date.now();
-			void refreshOpenference().then(() => requestRenderAll());
+			trackRefresh(refreshOpenference().then(() => requestRenderAll()).catch(() => requestRenderAll()));
 		}
 		requestRenderAll();
 	});
@@ -699,6 +730,12 @@ export default function piHud(pi: ExtensionAPI) {
 		lastAssistantStart = null;
 		lastTpsRenderAt = 0;
 		if (tokenSpeed.isStreaming) tokenSpeed.stop();
+		// Re-attach rejection handlers and clear the registry. The host does not
+		// await this handler, so this is not a cancellation or drain; a late
+		// completion is harmless (read-only credentials, per-provider dedup, and
+		// session_start resyncs totals). See inFlightRefreshes above.
+		for (const p of inFlightRefreshes) void p.catch(() => {});
+		inFlightRefreshes.clear();
 	});
 
 
@@ -864,6 +901,7 @@ export default function piHud(pi: ExtensionAPI) {
 					`Umans: ${umansUsage.status}${umansUsage.message ? ` (${umansUsage.message})` : ""}`,
 					`Kimi: ${kimiUsage.status}${kimiUsage.message ? ` (${kimiUsage.message})` : ""}`,
 					`Grok: ${grokUsage.status}${grokUsage.message ? ` (${grokUsage.message})` : ""}`,
+					`Openference: ${openferenceUsage.status}${openferenceUsage.message ? ` (${openferenceUsage.message})` : ""}`,
 				].join("\n"),
 				"info",
 			);

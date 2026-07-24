@@ -113,19 +113,25 @@ test("hud refresh and ascii commands reuse registered UI surfaces", () => {
 			assert.default.equal(intervalStarts, 1);
 			assert.default.equal(intervalClears, 0);
 
+			// session_start kicks off an async provider refresh that renders on
+			// completion; flush it so the per-command render deltas below measure
+			// only what each command itself triggers.
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const baselineRenders = footerRenderRequests;
+
 			await hudCommand.handler("refresh", ctx);
 			assert.default.equal(setFooterCalls, 1, "refresh must not reinstall footer");
 			assert.default.equal(setHeaderCalls, 1, "refresh must not reinstall header");
 			assert.default.equal(setEditorCalls, 1, "refresh must not reinstall editor component");
 			assert.default.equal(intervalStarts, 1, "refresh must not start another wall-clock timer");
-			assert.default.equal(footerRenderRequests, 1);
+			assert.default.equal(footerRenderRequests - baselineRenders, 1);
 
 			await hudCommand.handler("ascii", ctx);
 			assert.default.equal(setFooterCalls, 1, "ascii must not reinstall footer");
 			assert.default.equal(setHeaderCalls, 1, "ascii must not reinstall header");
 			assert.default.equal(setEditorCalls, 1, "ascii must not reinstall editor component");
 			assert.default.equal(intervalStarts, 1, "ascii must not start another wall-clock timer");
-			assert.default.equal(footerRenderRequests, 2);
+			assert.default.equal(footerRenderRequests - baselineRenders, 2);
 
 			handlers.get("session_start")({}, ctx);
 			assert.default.equal(setFooterCalls, 2, "second install should replace footer");

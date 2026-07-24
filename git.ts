@@ -54,11 +54,12 @@ export function gitRemoteStatusAsync(cwd: string): Promise<GitRemoteResult> {
 		}, (err, stdout) => {
 			if (err) return resolve({ ahead: 0, behind: 0, hasRemote: false });
 			const parts = stdout.trim().split(/\s+/);
-			resolve({
-				ahead: parseInt(parts[0] ?? "0", 10),
-				behind: parseInt(parts[1] ?? "0", 10),
-				hasRemote: true,
-			});
+			const ahead = parseInt(parts[0] ?? "0", 10);
+			const behind = parseInt(parts[1] ?? "0", 10);
+			if (!Number.isFinite(ahead) || !Number.isFinite(behind)) {
+				return resolve({ ahead: 0, behind: 0, hasRemote: false });
+			}
+			resolve({ ahead, behind, hasRemote: true });
 		});
 	});
 }

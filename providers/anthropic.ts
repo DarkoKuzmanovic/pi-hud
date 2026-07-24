@@ -116,15 +116,21 @@ function formatStaleAge(updatedAt: number | undefined): string {
 	return `stale ${ageDay}d`;
 }
 
+function parseResetAt(value: string | undefined): number | undefined {
+	if (!value) return undefined;
+	const t = Date.parse(value);
+	return Number.isFinite(t) ? t : undefined;
+}
+
 export function anthropicToProvider(result: AnthropicFetchResult, previous?: ProviderUsage): ProviderUsage {
 	if (result.status !== "ok") {
 		// When we have cached usedPercent values from a prior success, keep showing them
 		// and replace the alarming error message with a calm "stale Nm" indicator.
-		if (hasCachedValues(previous)) {
+		if (previous && hasCachedValues(previous)) {
 			return {
-				...previous!,
+				...previous,
 				status: "unknown",
-				message: result.status === "auth-needed" ? result.message : formatStaleAge(previous!.updatedAt),
+				message: result.status === "auth-needed" ? result.message : formatStaleAge(previous.updatedAt),
 				// Preserve previous.updatedAt so staleness keeps counting up — do NOT reset to now.
 			};
 		}
@@ -145,8 +151,8 @@ export function anthropicToProvider(result: AnthropicFetchResult, previous?: Pro
 		status: "ok",
 		updatedAt: result.fetchedAt ?? Date.now(),
 		windows: [
-			{ label: "5h", usedPercent: result.usage?.five_hour?.utilization, resetAt: result.usage?.five_hour?.resets_at ? Date.parse(result.usage.five_hour.resets_at) : undefined },
-			{ label: "week", usedPercent: result.usage?.seven_day?.utilization, resetAt: result.usage?.seven_day?.resets_at ? Date.parse(result.usage.seven_day.resets_at) : undefined },
+			{ label: "5h", usedPercent: result.usage?.five_hour?.utilization, resetAt: parseResetAt(result.usage?.five_hour?.resets_at) },
+			{ label: "week", usedPercent: result.usage?.seven_day?.utilization, resetAt: parseResetAt(result.usage?.seven_day?.resets_at) },
 		],
 	};
 }

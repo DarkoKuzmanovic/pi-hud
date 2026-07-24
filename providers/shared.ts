@@ -1,16 +1,30 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
 const AUTH_PATH = join(homedir(), ".pi", "agent", "auth.json");
 
-export function readAuth(): Record<string, any> {
+export function readAuth(): Record<string, unknown> {
 	try {
 		if (!existsSync(AUTH_PATH)) return {};
 		return JSON.parse(readFileSync(AUTH_PATH, "utf8"));
 	} catch {
 		return {};
 	}
+}
+
+/** A single auth.json entry, narrowed from `unknown` for safe field access. */
+interface AuthEntry {
+	type?: unknown;
+	access?: unknown;
+	accountId?: unknown;
+	refresh?: unknown;
+	expires?: unknown;
+	key?: unknown;
+}
+
+function isAuthEntry(value: unknown): value is AuthEntry {
+	return typeof value === "object" && value !== null;
 }
 
 export interface CodexAuth {
@@ -20,14 +34,11 @@ export interface CodexAuth {
 	expires?: number;
 }
 
-export function writeAuth(auth: Record<string, unknown>): void {
-	writeFileSync(AUTH_PATH, `${JSON.stringify(auth, null, 2)}\n`);
-}
-
 export function readCodexAuth(): CodexAuth | null {
 	const cred = readAuth()["openai-codex"];
+	if (!isAuthEntry(cred)) return null;
 	if (
-		cred?.type !== "oauth" ||
+		cred.type !== "oauth" ||
 		typeof cred.access !== "string" ||
 		typeof cred.accountId !== "string"
 	)
@@ -42,13 +53,14 @@ export function readCodexAuth(): CodexAuth | null {
 
 export function readAnthropicAuth(): { access: string } | null {
 	const cred = readAuth().anthropic;
-	if (cred?.type !== "oauth" || typeof cred.access !== "string") return null;
+	if (!isAuthEntry(cred) || cred.type !== "oauth" || typeof cred.access !== "string")
+		return null;
 	return { access: cred.access };
 }
 
 export function readMinimaxAuth(): { access: string } | null {
 	const cred = readAuth().minimax;
-	if (cred?.type === "api_key" && typeof cred.key === "string") {
+	if (isAuthEntry(cred) && cred.type === "api_key" && typeof cred.key === "string") {
 		return { access: cred.key };
 	}
 	const env = process.env.MINIMAX_API_KEY;
@@ -58,22 +70,25 @@ export function readMinimaxAuth(): { access: string } | null {
 
 export function readUmansAuth(): { access: string } | null {
 	const cred = readAuth().umans;
-	if (cred?.type === "oauth" && typeof cred.access === "string")
-		return { access: cred.access };
-	if (cred?.type === "api_key" && typeof cred.key === "string")
-		return { access: cred.key };
+	if (isAuthEntry(cred)) {
+		if (cred.type === "oauth" && typeof cred.access === "string")
+			return { access: cred.access };
+		if (cred.type === "api_key" && typeof cred.key === "string")
+			return { access: cred.key };
+	}
 	const env = process.env.UMANS_API_KEY;
 	if (env) return { access: env };
 	return null;
 }
 
-
 export function readKimiAuth(): { access: string } | null {
 	const cred = readAuth()["kimi-coding"];
-	if (cred?.type === "oauth" && typeof cred.access === "string")
-		return { access: cred.access };
-	if (cred?.type === "api_key" && typeof cred.key === "string")
-		return { access: cred.key };
+	if (isAuthEntry(cred)) {
+		if (cred.type === "oauth" && typeof cred.access === "string")
+			return { access: cred.access };
+		if (cred.type === "api_key" && typeof cred.key === "string")
+			return { access: cred.key };
+	}
 	const env = process.env.KIMI_API_KEY;
 	if (env) return { access: env };
 	return null;
@@ -85,7 +100,7 @@ export function readXaiAuth(): { access: string } | null {
 	const auth = readAuth();
 	for (const key of ["xai", "xai-auth", "grok-cli"]) {
 		const cred = auth[key];
-		if (cred?.type === "oauth" && typeof cred.access === "string")
+		if (isAuthEntry(cred) && cred.type === "oauth" && typeof cred.access === "string")
 			return { access: cred.access };
 	}
 	const env = process.env.GROK_CLI_OAUTH_TOKEN;
@@ -173,13 +188,16 @@ export async function fetchWithAuth(opts: FetchOptions): Promise<FetchResult> {
 		const statusCode = response.status;
 
 		if (redirectCodes.includes(statusCode)) {
+			await response.body?.cancel().catch(() => {});
 			throw new FetchError("auth-needed", "session", statusCode);
 		}
 		if (authNeededCodes.includes(statusCode)) {
+			await response.body?.cancel().catch(() => {});
 			throw new FetchError("auth-needed", "expired", statusCode);
 		}
 		if (statusCode < 200 || statusCode >= 300) {
 			const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+			await response.body?.cancel().catch(() => {});
 			throw new FetchError("http-error", `http ${statusCode}`, statusCode, retryAfterMs);
 		}
 
@@ -195,7 +213,7 @@ export async function fetchWithAuth(opts: FetchOptions): Promise<FetchResult> {
 			if (done) break;
 			totalBytes += value.byteLength;
 			if (totalBytes > maxBytes) {
-				reader.cancel();
+				void reader.cancel().catch(() => {});
 				throw new FetchError("large", "large response");
 			}
 			chunks.push(value);
@@ -216,7 +234,7 @@ export async function fetchWithAuth(opts: FetchOptions): Promise<FetchResult> {
 		return { status: statusCode, body };
 	} catch (err) {
 		if (err instanceof FetchError) throw err;
-		if ((err as any).name === "AbortError") {
+		if (err instanceof Error && err.name === "AbortError") {
 			throw new FetchError("timeout", "timeout");
 		}
 		throw new FetchError("network", "network");

@@ -14,12 +14,13 @@ export function createMarkerEditorFactory(deps: EditorSkinDeps) {
 		const editor = new (class extends CustomEditor {
 			render(width: number): string[] {
 				if (!deps.isEnabled()) return super.render(width);
+				if (width < 4) return super.render(width);
 				const markerWidth = 3; // Fixed column: "▌  " or "↑3 " or "↓12 "
 				const innerWidth = Math.max(1, width - markerWidth);
 
 				// Render at innerWidth so text wraps correctly for the narrower column
 				const lines = super.render(innerWidth);
-				if (lines.length < 2) return lines;
+				if (lines.length < 2) return withEditorPadding(lines, deps.getPadding());
 
 				const fullTheme = deps.getFullTheme();
 				const bgOpen = fullTheme.getBgAnsi("userMessageBg");
@@ -64,9 +65,13 @@ export function createMarkerEditorFactory(deps: EditorSkinDeps) {
 				// Build the marker column: ▌ in borderColor (thinking level / bash mode),
 				// or scroll indicator replaces ▌ on that line. Padded to markerWidth.
 				const makeMarker = (indicator?: string): string => {
-					const glyph = indicator ?? markerRaw;
+					let glyph = indicator ?? markerRaw;
+					if (indicator) {
+						const num = indicator.slice(1); // strip ↑/↓
+						glyph = num.length > 2 ? `${indicator[0]}99` : indicator;
+					}
 					const styled = this.borderColor(glyph);
-					const styledVisible = indicator ? indicator.length : 1;
+					const styledVisible = indicator ? Math.min(glyph.length, markerWidth) : 1;
 					const pad = " ".repeat(Math.max(0, markerWidth - styledVisible));
 					return `${styled}${pad}`;
 				};

@@ -737,6 +737,18 @@ export function loadLayout(): LoadResult {
 }
 
 /**
+ * Replace the value of a top-level string `key` in a JSONC document, matching
+ * only an uncommented occurrence (a line whose leading whitespace is not a `//`
+ * comment). Returns null when no uncommented key exists so the caller can insert.
+ */
+function replaceJsoncKey(text: string, key: string, value: string): string | null {
+	const re = new RegExp(`^[ \\t]*"${key}"\\s*:\\s*"[^"]*"`, "m");
+	const match = re.exec(text);
+	if (!match) return null;
+	return text.replace(re, (m) => m.replace(/"[^"]*"$/, `"${value}"`));
+}
+
+/**
  * Persist the chosen header palette to the layout .jsonc by rewriting only the
  * `theme` value — comments and formatting are preserved. If a `"theme"` key
  * already exists its value is swapped; otherwise the key is inserted right
@@ -753,10 +765,10 @@ export function writeThemeToLayout(
 			writeFileSync(path, DEFAULT_FILE, "utf8");
 		}
 		const text = readFileSync(path, "utf8");
-		const themeKey = /"theme"\s*:\s*"[^"]*"/;
 		let next: string;
-		if (themeKey.test(text)) {
-			next = text.replace(themeKey, `"theme": "${name}"`);
+		const replaced = replaceJsoncKey(text, "theme", name);
+		if (replaced !== null) {
+			next = replaced;
 		} else {
 			const braceIdx = text.indexOf("{");
 			if (braceIdx === -1) {
@@ -790,10 +802,10 @@ export function writeEditorToLayout(
 			writeFileSync(path, DEFAULT_FILE, "utf8");
 		}
 		const text = readFileSync(path, "utf8");
-		const editorKey = /"editor"\s*:\s*"[^"]*"/;
 		let next: string;
-		if (editorKey.test(text)) {
-			next = text.replace(editorKey, `"editor": "${style}"`);
+		const replaced = replaceJsoncKey(text, "editor", style);
+		if (replaced !== null) {
+			next = replaced;
 		} else {
 			const braceIdx = text.indexOf("{");
 			if (braceIdx === -1) {

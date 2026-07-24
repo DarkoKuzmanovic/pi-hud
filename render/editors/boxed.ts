@@ -111,6 +111,7 @@ export function createBoxedEditorFactory(
 			render(width: number): string[] {
 				if (!deps.isEnabled()) return super.render(width);
 				if (width <= 0) return [];
+				if (width < 4) return super.render(width);
 
 				// Full frame needs left + right verticals; content lives inside.
 				const frameOverhead = 2;

@@ -99,7 +99,7 @@ function mapWindow(w: SnapshotWindow): UsageWindow | null {
 	const label = WINDOW_ID_TO_LABEL[w.id];
 	if (!label) return null; // unknown window id — drop rather than guess
 	const out: UsageWindow = { label };
-	if (typeof w.usedPercent === "number") out.usedPercent = w.usedPercent;
+	if (typeof w.usedPercent === "number" && Number.isFinite(w.usedPercent)) out.usedPercent = w.usedPercent;
 	if (typeof w.used === "number") out.usedCount = w.used;
 	if (typeof w.limit === "number") out.limitCount = w.limit;
 	if (w.resetAt) {
@@ -115,11 +115,12 @@ function mapWindow(w: SnapshotWindow): UsageWindow | null {
  */
 function mapProvider(p: SnapshotProvider, prev: ProviderUsage, finishedMs: number): ProviderUsage {
 	const windows = p.windows.map(mapWindow).filter((w): w is UsageWindow => w !== null);
+	const mappedStatus = STATE_TO_STATUS[p.state] ?? "unknown";
 	const updated = p.updatedAt ? Date.parse(p.updatedAt) : finishedMs;
 	return {
 		...prev,
-		status: STATE_TO_STATUS[p.state] ?? "unknown",
-		message: p.status ?? prev.message,
+		status: mappedStatus,
+		message: p.status ?? (mappedStatus === "ok" ? undefined : prev.message),
 		updatedAt: Number.isFinite(updated) ? updated : finishedMs,
 		windows: windows.length > 0 ? windows : prev.windows,
 		concurrency: p.concurrency

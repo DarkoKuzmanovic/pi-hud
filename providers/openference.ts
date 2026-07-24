@@ -24,8 +24,10 @@
 // as "5h" — it will not track 1:1 with the real rolling-window quota, but trends
 // in the same direction across a session.
 
-import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { existsSync } from "node:fs";
+import { copyFile, mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fetchWithAuth, FetchError } from "./shared.js";
@@ -67,11 +69,11 @@ function decodeLocalStorageString(buf: Buffer): string | null {
 }
 
 /** Scan all Firefox profiles for an openference.com LSNG storage DB; pick the most recently modified as the "likely active" profile. Never hardcodes a profile name. */
-function findSessionDbPath(): string | null {
+async function findSessionDbPath(): Promise<string | null> {
 	const ffRoot = join(homedir(), ".mozilla", "firefox");
 	let entries: string[];
 	try {
-		entries = readdirSync(ffRoot, { withFileTypes: true })
+		entries = (await readdir(ffRoot, { withFileTypes: true }))
 			.filter((d) => d.isDirectory())
 			.map((d) => d.name);
 	} catch {
@@ -82,8 +84,8 @@ function findSessionDbPath(): string | null {
 	for (const profile of entries) {
 		const candidate = join(ffRoot, profile, "storage", "default", "https+++openference.com", "ls", "data.sqlite");
 		try {
-			const stat = statSync(candidate);
-			if (!best || stat.mtimeMs > best.mtimeMs) best = { path: candidate, mtimeMs: stat.mtimeMs };
+			const s = await stat(candidate);
+			if (!best || s.mtimeMs > best.mtimeMs) best = { path: candidate, mtimeMs: s.mtimeMs };
 		} catch {
 			// candidate doesn't exist for this profile — skip
 		}
@@ -97,20 +99,21 @@ function findSessionDbPath(): string | null {
  * Returns null (not an error) when no session is present — that's a normal,
  * expected "not logged in" state, not a failure.
  */
-function extractSessionToken(): { token: string } | { error: string } | null {
-	const dbPath = findSessionDbPath();
+async function extractSessionToken(): Promise<{ token: string } | { error: string } | null> {
+	const dbPath = await findSessionDbPath();
 	if (!dbPath) return null;
 
+	const execFileAsync = promisify(execFile);
 	let tempDir: string | null = null;
 	try {
-		tempDir = mkdtempSync(join(tmpdir(), "pi-hud-ff-"));
+		tempDir = await mkdtemp(join(tmpdir(), "pi-hud-ff-"));
 		const destDb = join(tempDir, "data.sqlite");
-		copyFileSync(dbPath, destDb);
+		await copyFile(dbPath, destDb);
 		for (const suffix of ["-wal", "-shm"]) {
 			const src = dbPath + suffix;
 			if (existsSync(src)) {
 				try {
-					copyFileSync(src, destDb + suffix);
+					await copyFile(src, destDb + suffix);
 				} catch {
 					// best-effort — a missing/unreadable sidecar just risks a slightly stale read
 				}
@@ -119,11 +122,12 @@ function extractSessionToken(): { token: string } | { error: string } | null {
 
 		let raw: string;
 		try {
-			raw = execFileSync(
+			const { stdout } = await execFileAsync(
 				"sqlite3",
 				[destDb, "SELECT hex(value) || '|' || compression_type FROM data WHERE key='user_session';"],
 				{ encoding: "utf8", timeout: SQLITE_TIMEOUT_MS },
-			).trim();
+			);
+			raw = stdout.trim();
 		} catch {
 			return { error: "sqlite3 unavailable" };
 		}
@@ -145,7 +149,7 @@ function extractSessionToken(): { token: string } | { error: string } | null {
 	} finally {
 		if (tempDir) {
 			try {
-				rmSync(tempDir, { recursive: true, force: true });
+				await rm(tempDir, { recursive: true, force: true });
 			} catch {
 				// best-effort cleanup — temp dir is in os.tmpdir(), not fatal if this fails
 			}
@@ -154,7 +158,7 @@ function extractSessionToken(): { token: string } | { error: string } | null {
 }
 
 export async function fetchOpenferenceUsage(): Promise<OpenferenceFetchResult> {
-	const extracted = extractSessionToken();
+	const extracted = await extractSessionToken();
 	if (extracted === null) {
 		return { usage: null, status: "auth-needed", message: "no browser session" };
 	}

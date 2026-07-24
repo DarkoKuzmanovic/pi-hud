@@ -38,8 +38,21 @@ interface KimiUsageResponse {
 	user?: { membership?: { level?: unknown } };
 }
 
+function hasKimiQuota(row: unknown): boolean {
+	if (!row || typeof row !== "object" || Array.isArray(row)) return false;
+	const q = row as Record<string, unknown>;
+	return (
+		toNum(q.limit) !== null ||
+		toNum(q.used) !== null ||
+		toNum(q.remaining) !== null
+	);
+}
+
 function isValidKimiResponse(value: unknown): value is KimiUsageResponse {
-	return !!value && typeof value === "object" && !Array.isArray(value);
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const r = value as Record<string, unknown>;
+	if (hasKimiQuota(r.usage)) return true;
+	return Array.isArray(r.limits) && r.limits.length > 0;
 }
 
 function windowMinutes(window?: { duration?: unknown; timeUnit?: unknown }): number | null {
@@ -102,9 +115,8 @@ export async function fetchKimiUsage(): Promise<KimiFetchResult> {
 		const shortLabel = windowLabelFromMinutes(windowMinutes(shortEntry?.window));
 
 		const concurrencyLimit = toNum(parsed.parallel?.limit);
-		const concurrencyUsed = Array.isArray(parsed.parallel?.details)
-			? parsed.parallel!.details!.length
-			: 0;
+		const details = parsed.parallel?.details;
+		const concurrencyUsed = Array.isArray(details) ? details.length : 0;
 
 		const usage: KimiUsageData = {
 			shortLabel,
