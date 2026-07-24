@@ -96,11 +96,27 @@ export interface MachineNameConfig {
 	label?: string;
 }
 
+
+export type UsageSource = "native" | "snapshot";
+
+export interface UsageConfig {
+	/**
+	 * Where quota data comes from.
+	 * - "native": pi-hud fetches each provider's usage directly (default; public-safe).
+	 * - "snapshot": read the shared usaged snapshot (current.json), falling back to
+	 *   native fetch when the file is absent or stale.
+	 */
+	source: UsageSource;
+}
+
 export interface HudLayout {
 	/** Joins blocks within a footer side or extra row. */
 	separator: string;
 	/** Machine label rendered by the project identity block. */
 	machineName: MachineNameConfig;
+
+	/** Where quota data comes from: native fetch or the shared usaged snapshot. */
+	usage: UsageConfig;
 	footer: FooterConfig;
 	/** Block ids rendered with chip-style brackets at render time. Defaults to `DEFAULT_CHIPS`. */
 	chips: BlockId[];
@@ -126,6 +142,13 @@ const MACHINE_NAME_SOURCES = new Set<MachineNameSource>(["hostname", "tailscale"
 
 function isMachineNameSource(value: unknown): value is MachineNameSource {
 	return typeof value === "string" && MACHINE_NAME_SOURCES.has(value as MachineNameSource);
+}
+
+
+const USAGE_SOURCES = new Set<UsageSource>(["native", "snapshot"]);
+
+function isUsageSource(value: unknown): value is UsageSource {
+	return typeof value === "string" && USAGE_SOURCES.has(value as UsageSource);
 }
 
 export interface LayoutValidationIssue {
@@ -158,6 +181,8 @@ export const DEFAULT_CHIPS: BlockId[] = [
 export const DEFAULT_LAYOUT: HudLayout = {
 	separator: " · ",
 	machineName: { source: "hostname" },
+
+	usage: { source: "native" },
 	footer: {
 		enabled: true,
 left: ["cwd", "model", "thinking", "ext:model-prompts", "context"],
@@ -203,6 +228,15 @@ const DEFAULT_FILE = `// pi-hud layout — edit and run /hud reload (or restart 
   "machineName": {
     "source": "hostname",
     // "label": "darko-laptop"
+  },
+
+
+  // Where quota data comes from. "native" (default) = pi-hud fetches each
+  // provider's usage directly. "snapshot" = read the shared usaged daemon
+  // snapshot (~/.local/state/usage/current.json), falling back to native fetch
+  // when it is absent or stale. Keep "native" unless usaged is running.
+  "usage": {
+    "source": "native"
   },
 
   // Main footer line below the input box, plus optional full-width rows below it.
@@ -444,6 +478,14 @@ export function validateLayout(raw: unknown): LayoutValidationIssue[] {
 		}
 	}
 
+	if ("usage" in raw) {
+		if (!isRecord(raw.usage)) {
+			warn(issues, "usage", "must be an object");
+		} else if ("source" in raw.usage && !isUsageSource(raw.usage.source)) {
+			warn(issues, "usage.source", 'must be "native" or "snapshot"');
+		}
+	}
+
 	// Legacy keys from the mascot/shelf-widget era (removed). Still tolerated
 	// at load time — mergeLayout() folds "shelf.rows" into footer.extraRows so
 	// upgrading doesn't silently drop previously-visible rows — but flagged
@@ -562,6 +604,10 @@ export function mergeLayout(raw: unknown): HudLayout {
 		if (typeof r.machineName.label === "string" && r.machineName.label.trim().length > 0) {
 			base.machineName.label = r.machineName.label.trim();
 		}
+	}
+
+	if (isRecord(r.usage) && isUsageSource(r.usage.source)) {
+		base.usage.source = r.usage.source;
 	}
 
 	const footer = r.footer as Record<string, unknown> | undefined;

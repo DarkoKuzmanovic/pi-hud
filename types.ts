@@ -7,6 +7,8 @@ export type ProviderId =
 	| "minimax"
 	| "umans"
 	| "openference"
+	| "kimi"
+	| "grok"
 	| "unsupported";
 export type ProviderStatus = "ok" | "unknown" | "auth-needed" | "error";
 
@@ -161,6 +163,41 @@ export interface OpenferenceUsageData {
 
 export interface OpenferenceFetchResult {
 	usage: OpenferenceUsageData | null;
+	status: ProviderStatus;
+	message?: string;
+}
+
+export interface KimiUsageData {
+	/** Label for the short rolling window (derived from the API's window spec; 300min = "5h"). */
+	shortLabel: WindowLabel;
+	shortUsed: number | null;
+	shortLimit: number | null;
+	shortResetAt?: number;
+	weekUsed: number | null;
+	weekLimit: number | null;
+	weekResetAt?: number;
+	/** Active parallel sessions (length of the API's session-id list). */
+	concurrencyUsed: number;
+	concurrencyLimit: number | null;
+}
+
+export interface KimiFetchResult {
+	usage: KimiUsageData | null;
+	status: ProviderStatus;
+	message?: string;
+}
+
+export interface GrokUsageData {
+	monthlyUsed: number;
+	monthlyLimit: number;
+	monthlyResetAt?: number;
+	/** Weekly credit window percent (0-100); absent when the endpoint omits it. */
+	weeklyUsedPercent?: number;
+	weeklyResetAt?: number;
+}
+
+export interface GrokFetchResult {
+	usage: GrokUsageData | null;
 	status: ProviderStatus;
 	message?: string;
 }

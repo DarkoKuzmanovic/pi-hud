@@ -7,7 +7,7 @@ import { TokenSpeedTracker } from "./token-speed.js";
 import { resolveMachineName } from "./machine-name.js";
 
 // Types
-import type { ProviderUsage, ThemeAccess } from "./types.js";
+import type { ProviderId, ProviderUsage, ThemeAccess } from "./types.js";
 
 // Providers
 import { fetchCodexUsage, codexToProvider } from "./providers/codex.js";
@@ -25,6 +25,8 @@ import { fetchOpenferenceUsage, openferenceToProvider } from "./providers/openfe
 import { fetchKimiUsage, kimiToProvider } from "./providers/kimi.js";
 import { fetchGrokUsage, grokToProvider } from "./providers/grok.js";
 import { resolveProviderId } from "./provider-routing.js";
+
+import { readSnapshotProvider } from "./usage-snapshot.js";
 
 // Git
 import {
@@ -289,10 +291,25 @@ export default function piHud(pi: ExtensionAPI) {
 	};
 
 	// --- Provider refresh (in-flight dedup) ---
+
+	// Route provider refreshes through the shared usaged snapshot when
+	// `usage.source` is "snapshot"; fall back to a native fetch when the
+	// snapshot is absent, stale, or missing this provider.
+	const snapshotOrNative = async (
+		id: ProviderId,
+		prev: ProviderUsage,
+		native: () => Promise<ProviderUsage>,
+	): Promise<ProviderUsage> => {
+		if (layout.usage.source === "snapshot") {
+			const fromSnapshot = readSnapshotProvider(id, prev);
+			if (fromSnapshot) return fromSnapshot;
+		}
+		return native();
+	};
 	const refreshCodex = async () => {
 		if (codexInFlight) return codexInFlight;
 		codexInFlight = (async () => {
-			codexUsage = codexToProvider(await fetchCodexUsage(), codexUsage);
+			codexUsage = await snapshotOrNative("codex", codexUsage, async () => codexToProvider(await fetchCodexUsage(), codexUsage));
 		})().finally(() => {
 			codexInFlight = null;
 		});
@@ -302,9 +319,8 @@ export default function piHud(pi: ExtensionAPI) {
 	const refreshAnthropic = async () => {
 		if (anthropicInFlight) return anthropicInFlight;
 		anthropicInFlight = (async () => {
-			anthropicUsage = anthropicToProvider(
-				await fetchAnthropicUsage(),
-				anthropicUsage,
+			anthropicUsage = await snapshotOrNative("anthropic", anthropicUsage, async () =>
+				anthropicToProvider(await fetchAnthropicUsage(), anthropicUsage),
 			);
 		})().finally(() => {
 			anthropicInFlight = null;
@@ -316,7 +332,7 @@ export default function piHud(pi: ExtensionAPI) {
 	const refreshMinimax = async () => {
 		if (minimaxInFlight) return minimaxInFlight;
 		minimaxInFlight = (async () => {
-			minimaxUsage = minimaxToProvider(await fetchMinimaxUsage(), minimaxUsage);
+			minimaxUsage = await snapshotOrNative("minimax", minimaxUsage, async () => minimaxToProvider(await fetchMinimaxUsage(), minimaxUsage));
 		})().finally(() => {
 			minimaxInFlight = null;
 		});
@@ -326,7 +342,7 @@ export default function piHud(pi: ExtensionAPI) {
 	const refreshUmans = async () => {
 		if (umansInFlight) return umansInFlight;
 		umansInFlight = (async () => {
-			umansUsage = umansToProvider(await fetchUmansUsage(), umansUsage);
+			umansUsage = await snapshotOrNative("umans", umansUsage, async () => umansToProvider(await fetchUmansUsage(), umansUsage));
 		})().finally(() => {
 			umansInFlight = null;
 		});
@@ -336,7 +352,7 @@ export default function piHud(pi: ExtensionAPI) {
 	const refreshOpenference = async () => {
 		if (openferenceInFlight) return openferenceInFlight;
 		openferenceInFlight = (async () => {
-			openferenceUsage = openferenceToProvider(await fetchOpenferenceUsage(), openferenceUsage);
+			openferenceUsage = await snapshotOrNative("openference", openferenceUsage, async () => openferenceToProvider(await fetchOpenferenceUsage(), openferenceUsage));
 		})().finally(() => {
 			openferenceInFlight = null;
 		});
@@ -346,7 +362,7 @@ export default function piHud(pi: ExtensionAPI) {
 	const refreshKimi = async () => {
 		if (kimiInFlight) return kimiInFlight;
 		kimiInFlight = (async () => {
-			kimiUsage = kimiToProvider(await fetchKimiUsage(), kimiUsage);
+			kimiUsage = await snapshotOrNative("kimi", kimiUsage, async () => kimiToProvider(await fetchKimiUsage(), kimiUsage));
 		})().finally(() => {
 			kimiInFlight = null;
 		});
@@ -356,7 +372,7 @@ export default function piHud(pi: ExtensionAPI) {
 	const refreshGrok = async () => {
 		if (grokInFlight) return grokInFlight;
 		grokInFlight = (async () => {
-			grokUsage = grokToProvider(await fetchGrokUsage(), grokUsage);
+			grokUsage = await snapshotOrNative("grok", grokUsage, async () => grokToProvider(await fetchGrokUsage(), grokUsage));
 		})().finally(() => {
 			grokInFlight = null;
 		});

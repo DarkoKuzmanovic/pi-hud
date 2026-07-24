@@ -29,6 +29,7 @@
     "git.ts",
     "config.ts",
     "provider-routing.ts",
+    "usage-snapshot.ts",
     "token-speed.ts",
     "tsconfig.json",
     "render/**/*.ts",

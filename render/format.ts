@@ -242,7 +242,7 @@ export function renderProviderUsage(
 			: chip(label, theme);
 	const windows = provider.windows
 		.map((w) => renderWindow(w, theme))
-		.join(theme.fg("dim", "  "));
+		.join(theme.fg("dim", " | "));
 	const concurrencyPart = provider.concurrency
 		? `${theme.fg("dim", " | ")}${theme.fg("muted", `\u27e0 ${provider.concurrency.used}${provider.concurrency.limit != null ? `/${provider.concurrency.limit}` : ""}`)}`
 		: "";

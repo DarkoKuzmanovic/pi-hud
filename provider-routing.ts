@@ -7,5 +7,7 @@ export function resolveProviderId(provider?: string): ProviderId | undefined {
 	if (provider === "minimax" || provider === "minimax-cn") return "minimax";
 	if (provider === "umans") return "umans";
 	if (provider === "openference") return "openference";
+	if (provider === "kimi-coding") return "kimi";
+	if (provider === "xai" || provider === "xai-auth" || provider === "grok-cli") return "grok";
 	return undefined;
 }

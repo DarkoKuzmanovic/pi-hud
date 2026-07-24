@@ -67,6 +67,32 @@ export function readUmansAuth(): { access: string } | null {
 	return null;
 }
 
+
+export function readKimiAuth(): { access: string } | null {
+	const cred = readAuth()["kimi-coding"];
+	if (cred?.type === "oauth" && typeof cred.access === "string")
+		return { access: cred.access };
+	if (cred?.type === "api_key" && typeof cred.key === "string")
+		return { access: cred.key };
+	const env = process.env.KIMI_API_KEY;
+	if (env) return { access: env };
+	return null;
+}
+
+export function readXaiAuth(): { access: string } | null {
+	// Prefer the entry pi's built-in xai provider refreshes; fall back to
+	// alternates so a grok-cli/pi-grok-cli login also works.
+	const auth = readAuth();
+	for (const key of ["xai", "xai-auth", "grok-cli"]) {
+		const cred = auth[key];
+		if (cred?.type === "oauth" && typeof cred.access === "string")
+			return { access: cred.access };
+	}
+	const env = process.env.GROK_CLI_OAUTH_TOKEN;
+	if (env) return { access: env };
+	return null;
+}
+
 // --- Shared fetch helper ---
 
 export interface FetchOptions {
