@@ -1,15 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 function compileToTemp() {
   const outDir = mkdtempSync(join(tmpdir(), "pi-hud-test-build-"));
+  const tsc = resolve("node_modules/.bin/tsc");
   execFileSync(
-    resolve("node_modules/.bin/tsc"),
+    existsSync(tsc) ? tsc : "tsc",
     [
       "--outDir",
       outDir,
@@ -42,6 +43,7 @@ test("active provider routing maps supported provider aliases explicitly", async
     assert.equal(resolveProviderId("openai-codex"), "codex");
     assert.equal(resolveProviderId("codex"), "codex");
     assert.equal(resolveProviderId("openference"), "openference");
+    assert.equal(resolveProviderId("openadapter"), "openadapter");
     assert.equal(resolveProviderId("mimo"), undefined);
   } finally {
     rmSync(buildDir, { recursive: true, force: true });

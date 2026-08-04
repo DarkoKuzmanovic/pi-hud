@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -10,8 +10,9 @@ const HUD_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 
 function compileToTemp() {
 	const outDir = mkdtempSync(join(tmpdir(), "pi-hud-tps-test-build-"));
+	const tsc = join(HUD_DIR, "node_modules", ".bin", "tsc");
 	execFileSync(
-		join(HUD_DIR, "node_modules", ".bin", "tsc"),
+		existsSync(tsc) ? tsc : "tsc",
 		[
 			"--outDir",
 			outDir,

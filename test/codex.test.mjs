@@ -1,15 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 function compileToTemp() {
   const outDir = mkdtempSync(join(tmpdir(), "pi-hud-test-build-"));
+  const tsc = resolve("node_modules/.bin/tsc");
   execFileSync(
-    resolve("node_modules/.bin/tsc"),
+    existsSync(tsc) ? tsc : "tsc",
     [
       "--outDir",
       outDir,
