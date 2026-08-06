@@ -24,6 +24,7 @@ import { fetchUmansUsage, umansToProvider } from "./providers/umans.js";
 import { fetchOpenferenceUsage, openferenceToProvider } from "./providers/openference.js";
 import { fetchKimiUsage, kimiToProvider } from "./providers/kimi.js";
 import { fetchGrokUsage, grokToProvider } from "./providers/grok.js";
+import { fetchOpenAdapterUsage, openadapterToProvider } from "./providers/openadapter.js";
 import { resolveProviderId } from "./provider-routing.js";
 
 import { readSnapshotProvider } from "./usage-snapshot.js";
@@ -183,6 +184,14 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "week" }, { label: "month" }],
 	};
+	let openadapterUsage: ProviderUsage = {
+		id: "openadapter",
+		name: "OpenAdapter",
+		icon: "\udb80\udd8f",
+		status: "unknown",
+		message: "loading",
+		windows: [{ label: "5h" }, { label: "week" }],
+	};
 
 	let codexInFlight: Promise<void> | null = null;
 	let anthropicInFlight: Promise<void> | null = null;
@@ -191,6 +200,7 @@ export default function piHud(pi: ExtensionAPI) {
 	let openferenceInFlight: Promise<void> | null = null;
 	let kimiInFlight: Promise<void> | null = null;
 	let grokInFlight: Promise<void> | null = null;
+	let openadapterInFlight: Promise<void> | null = null;
 	// Throttle for agent_start-driven Openference refreshes (excluded from the wall-clock timer).
 	let lastOpenferenceRefreshAt = 0;
 
@@ -263,6 +273,8 @@ export default function piHud(pi: ExtensionAPI) {
 				return kimiUsage;
 			case "grok":
 				return grokUsage;
+			case "openadapter":
+				return openadapterUsage;
 			default:
 				return unsupportedUsage(ctx.model?.provider);
 		}
@@ -391,6 +403,16 @@ export default function piHud(pi: ExtensionAPI) {
 		return grokInFlight;
 	};
 
+	const refreshOpenAdapter = async () => {
+		if (openadapterInFlight) return openadapterInFlight;
+		openadapterInFlight = (async () => {
+			openadapterUsage = await snapshotOrNative("openadapter", openadapterUsage, async () => openadapterToProvider(await fetchOpenAdapterUsage(), openadapterUsage));
+		})().finally(() => {
+			openadapterInFlight = null;
+		});
+		return openadapterInFlight;
+	};
+
 
 
 	const refreshActiveProvider = (ctx: ExtensionContext) => {
@@ -409,6 +431,8 @@ export default function piHud(pi: ExtensionAPI) {
 				return refreshKimi();
 			case "grok":
 				return refreshGrok();
+			case "openadapter":
+				return refreshOpenAdapter();
 			default:
 				return Promise.resolve();
 		}
@@ -901,6 +925,7 @@ export default function piHud(pi: ExtensionAPI) {
 					`Umans: ${umansUsage.status}${umansUsage.message ? ` (${umansUsage.message})` : ""}`,
 					`Kimi: ${kimiUsage.status}${kimiUsage.message ? ` (${kimiUsage.message})` : ""}`,
 					`Grok: ${grokUsage.status}${grokUsage.message ? ` (${grokUsage.message})` : ""}`,
+					`OpenAdapter: ${openadapterUsage.status}${openadapterUsage.message ? ` (${openadapterUsage.message})` : ""}`,
 					`Openference: ${openferenceUsage.status}${openferenceUsage.message ? ` (${openferenceUsage.message})` : ""}`,
 				].join("\n"),
 				"info",

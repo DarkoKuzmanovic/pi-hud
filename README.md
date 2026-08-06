@@ -50,6 +50,10 @@ Each entry in `extraRows` is either a flat array of block ids (left-only, full-w
 | **Anthropic** (Claude) | OAuth in `~/.pi/agent/auth.json` | 5h, week |
 | **MiniMax** | API key in `~/.pi/agent/auth.json` or `MINIMAX_API_KEY` | 5h, week |
 | **Umans** | OAuth/API key in `~/.pi/agent/auth.json` or `UMANS_API_KEY` | Rolling |
+| **Kimi** | OAuth/API key in `~/.pi/agent/auth.json` or `KIMI_API_KEY` | 5h, week |
+| **Grok** (xAI) | OAuth in `~/.pi/agent/auth.json` or `GROK_CLI_OAUTH_TOKEN` | week, month |
+| **Openference** | Read-only Firefox localStorage session token | daily |
+| **OpenAdapter** | API key in `~/.pi/agent/models.json` or `OPENADAPTER_API_KEY` | 5h, week |
 
 Unsupported providers degrade to a quiet unsupported-provider state instead of throwing.
 
