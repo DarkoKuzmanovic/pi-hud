@@ -43,7 +43,6 @@ test("active provider routing maps supported provider aliases explicitly", async
     assert.equal(resolveProviderId("openai-codex"), "codex");
     assert.equal(resolveProviderId("codex"), "codex");
     assert.equal(resolveProviderId("openference"), "openference");
-    assert.equal(resolveProviderId("openadapter"), "openadapter");
     assert.equal(resolveProviderId("mimo"), undefined);
   } finally {
     rmSync(buildDir, { recursive: true, force: true });

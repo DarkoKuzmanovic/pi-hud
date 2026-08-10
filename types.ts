@@ -9,7 +9,6 @@ export type ProviderId =
 	| "openference"
 	| "kimi"
 	| "grok"
-	| "openadapter"
 	| "unsupported";
 export type ProviderStatus = "ok" | "unknown" | "auth-needed" | "error";
 
@@ -203,29 +202,3 @@ export interface GrokFetchResult {
 	message?: string;
 }
 
-/**
- * OpenAdapter reports percent-only windows — the gateway exposes utilization
- * and reset timestamps but no absolute request caps, so usedCount/limitCount
- * stay undefined and the HUD renders bars without "used/limit" counts.
- */
-export interface OpenAdapterUsageData {
-	/** Percent (0-100) per window; undefined when the API omits that window. */
-	shortPercent?: number;
-	shortResetAt?: number;
-	dailyPercent?: number;
-	dailyResetAt?: number;
-	weekPercent?: number;
-	weekResetAt?: number;
-	monthPercent?: number;
-	monthResetAt?: number;
-	/** Plan display name (e.g. "Lite"), surfaced in /hud status. */
-	planName?: string;
-	requestsToday?: number;
-	tokensToday?: number;
-}
-
-export interface OpenAdapterFetchResult {
-	usage: OpenAdapterUsageData | null;
-	status: ProviderStatus;
-	message?: string;
-}

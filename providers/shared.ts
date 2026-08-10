@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 
 const AUTH_PATH = join(homedir(), ".pi", "agent", "auth.json");
-const MODELS_PATH = join(homedir(), ".pi", "agent", "models.json");
 
 export function readAuth(): Record<string, unknown> {
 	try {
@@ -95,33 +94,6 @@ export function readKimiAuth(): { access: string } | null {
 	return null;
 }
 
-/** Shape we read out of models.json — only the fields this reader touches. */
-interface ModelsFile {
-	providers?: Record<string, { apiKey?: unknown } | undefined>;
-}
-
-/**
- * OpenAdapter's key lives in models.json (`providers.openadapter.apiKey`), not
- * auth.json: pi stores plain API-key gateway providers alongside their model
- * catalog rather than in the OAuth credential store. Falls back to
- * OPENADAPTER_API_KEY so an exported key works without touching config.
- */
-export function readOpenAdapterAuth(): { access: string } | null {
-	try {
-		if (existsSync(MODELS_PATH)) {
-			const parsed = JSON.parse(readFileSync(MODELS_PATH, "utf8")) as ModelsFile;
-			const key = parsed?.providers?.openadapter?.apiKey;
-			if (typeof key === "string" && key.trim().length > 0) {
-				return { access: key.trim() };
-			}
-		}
-	} catch {
-		// Best-effort: missing or malformed models.json falls through to env.
-	}
-	const env = process.env.OPENADAPTER_API_KEY;
-	if (env) return { access: env };
-	return null;
-}
 
 export function readXaiAuth(): { access: string } | null {
 	// Prefer the entry pi's built-in xai provider refreshes; fall back to

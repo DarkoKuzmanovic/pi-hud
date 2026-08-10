@@ -9,6 +9,5 @@ export function resolveProviderId(provider?: string): ProviderId | undefined {
 	if (provider === "openference") return "openference";
 	if (provider === "kimi-coding") return "kimi";
 	if (provider === "xai" || provider === "xai-auth" || provider === "grok-cli") return "grok";
-	if (provider === "openadapter") return "openadapter";
 	return undefined;
 }
