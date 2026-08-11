@@ -1,5 +1,7 @@
 # pi-browser-partial-fork
 
+> **DEAD 2026-08-11.** Design note only — never built (0 calls). Do not implement. Sole browser is chrome-devtools MCP; content path is web_search → fetch_content. See `~/.pi/agent/DECISIONS.md` browser-stack cleanup.
+
 ## Goal
 
 Install `@dreki-gg/pi-browser-tools` but **strip the colliding `web_search` tool** to avoid overriding the existing `@counterposition/pi-web-search` (Brave/Tavily/Exa/Jina).
