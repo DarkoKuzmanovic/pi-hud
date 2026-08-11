@@ -9,6 +9,7 @@ export type ProviderId =
 	| "openference"
 	| "kimi"
 	| "grok"
+	| "commandcode"
 	| "unsupported";
 export type ProviderStatus = "ok" | "unknown" | "auth-needed" | "error";
 
@@ -202,3 +203,27 @@ export interface GrokFetchResult {
 	message?: string;
 }
 
+
+export interface CommandCodeUsageData {
+	/** Rolling 5-hour window usage (credit value). */
+	fiveHourUsed: number;
+	/** 5-hour cap in credit value (30% of monthly allowance for most plans). */
+	fiveHourCap: number;
+	fiveHourResetAt?: number;
+	/** Rolling weekly window usage (credit value); null when the API omits it. */
+	weeklyUsed: number | null;
+	weeklyCap: number | null;
+	weeklyResetAt?: number;
+	/** Monthly credit allowance (the plan's per-month credit value; not spend). */
+	monthlyCredits: number | null;
+	purchasedCredits?: number;
+	freeCredits?: number;
+	/** Human plan name ("GOAT", "Pro", …) when subscriptions endpoint resolves it. */
+	planName?: string;
+}
+
+export interface CommandCodeFetchResult {
+	usage: CommandCodeUsageData | null;
+	status: ProviderStatus;
+	message?: string;
+}

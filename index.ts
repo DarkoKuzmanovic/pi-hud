@@ -24,6 +24,10 @@ import { fetchUmansUsage, umansToProvider } from "./providers/umans.js";
 import { fetchOpenferenceUsage, openferenceToProvider } from "./providers/openference.js";
 import { fetchKimiUsage, kimiToProvider } from "./providers/kimi.js";
 import { fetchGrokUsage, grokToProvider } from "./providers/grok.js";
+import {
+	fetchCommandCodeUsage,
+	commandCodeToProvider,
+} from "./providers/commandcode.js";
 import { resolveProviderId } from "./provider-routing.js";
 
 import { readSnapshotProvider } from "./usage-snapshot.js";
@@ -183,6 +187,14 @@ export default function piHud(pi: ExtensionAPI) {
 		message: "loading",
 		windows: [{ label: "week" }, { label: "month" }],
 	};
+	let commandCodeUsage: ProviderUsage = {
+		id: "commandcode",
+		name: "CommandCode",
+		icon: "\ud835\udd4f",
+		status: "unknown",
+		message: "loading",
+		windows: [{ label: "5h" }, { label: "week" }],
+	};
 
 	let codexInFlight: Promise<void> | null = null;
 	let anthropicInFlight: Promise<void> | null = null;
@@ -191,6 +203,7 @@ export default function piHud(pi: ExtensionAPI) {
 	let openferenceInFlight: Promise<void> | null = null;
 	let kimiInFlight: Promise<void> | null = null;
 	let grokInFlight: Promise<void> | null = null;
+	let commandCodeInFlight: Promise<void> | null = null;
 	// Throttle for agent_start-driven Openference refreshes (excluded from the wall-clock timer).
 	let lastOpenferenceRefreshAt = 0;
 
@@ -263,6 +276,8 @@ export default function piHud(pi: ExtensionAPI) {
 				return kimiUsage;
 			case "grok":
 				return grokUsage;
+			case "commandcode":
+				return commandCodeUsage;
 			default:
 				return unsupportedUsage(ctx.model?.provider);
 		}
@@ -391,6 +406,16 @@ export default function piHud(pi: ExtensionAPI) {
 		return grokInFlight;
 	};
 
+	const refreshCommandCode = async () => {
+		if (commandCodeInFlight) return commandCodeInFlight;
+		commandCodeInFlight = (async () => {
+			commandCodeUsage = await snapshotOrNative("commandcode", commandCodeUsage, async () => commandCodeToProvider(await fetchCommandCodeUsage(), commandCodeUsage));
+		})().finally(() => {
+			commandCodeInFlight = null;
+		});
+		return commandCodeInFlight;
+	};
+
 
 
 
@@ -410,6 +435,8 @@ export default function piHud(pi: ExtensionAPI) {
 				return refreshKimi();
 			case "grok":
 				return refreshGrok();
+			case "commandcode":
+				return refreshCommandCode();
 			default:
 				return Promise.resolve();
 		}
@@ -902,6 +929,7 @@ export default function piHud(pi: ExtensionAPI) {
 					`Umans: ${umansUsage.status}${umansUsage.message ? ` (${umansUsage.message})` : ""}`,
 					`Kimi: ${kimiUsage.status}${kimiUsage.message ? ` (${kimiUsage.message})` : ""}`,
 					`Grok: ${grokUsage.status}${grokUsage.message ? ` (${grokUsage.message})` : ""}`,
+					`CommandCode: ${commandCodeUsage.status}${commandCodeUsage.message ? ` (${commandCodeUsage.message})` : ""}`,
 					`Openference: ${openferenceUsage.status}${openferenceUsage.message ? ` (${openferenceUsage.message})` : ""}`,
 				].join("\n"),
 				"info",
