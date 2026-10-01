@@ -49,3 +49,18 @@ test("active provider routing maps supported provider aliases explicitly", async
     rmSync(buildDir, { recursive: true, force: true });
   }
 });
+
+test("the openai provider shows Codex quota only for a ChatGPT subscription login", async () => {
+  const buildDir = compileToTemp();
+  try {
+    const { resolveProviderId } = await import(
+      `${pathToFileURL(join(buildDir, "provider-routing.js")).href}?${Date.now()}`
+    );
+
+    assert.equal(resolveProviderId("openai", { subscription: true }), "codex");
+    assert.equal(resolveProviderId("openai", { subscription: false }), undefined);
+    assert.equal(resolveProviderId("openai"), undefined);
+  } finally {
+    rmSync(buildDir, { recursive: true, force: true });
+  }
+});

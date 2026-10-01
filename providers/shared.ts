@@ -32,23 +32,53 @@ export interface CodexAuth {
 	accountId: string;
 	refresh?: string;
 	expires?: number;
+	/** "pi" = legacy openai-codex login in Pi's auth.json; "codex-cli" = Codex CLI's auth.json (read-only). */
+	source: "pi" | "codex-cli";
 }
 
+/**
+ * Credential for the ChatGPT Codex usage endpoint.
+ *
+ * Pi's current openai subscription login issues an api.openai.com token without a
+ * ChatGPT account id, which the usage endpoint rejects. Prefer the legacy Pi
+ * openai-codex login when present, then fall back to the Codex CLI login.
+ */
 export function readCodexAuth(): CodexAuth | null {
 	const cred = readAuth()["openai-codex"];
-	if (!isAuthEntry(cred)) return null;
 	if (
-		cred.type !== "oauth" ||
-		typeof cred.access !== "string" ||
-		typeof cred.accountId !== "string"
-	)
+		isAuthEntry(cred) &&
+		cred.type === "oauth" &&
+		typeof cred.access === "string" &&
+		typeof cred.accountId === "string"
+	) {
+		return {
+			access: cred.access,
+			accountId: cred.accountId,
+			refresh: typeof cred.refresh === "string" ? cred.refresh : undefined,
+			expires: typeof cred.expires === "number" ? cred.expires : undefined,
+			source: "pi",
+		};
+	}
+	return readCodexCliAuth();
+}
+
+function readCodexCliAuth(): CodexAuth | null {
+	const codexHome = process.env.CODEX_HOME?.trim() || join(homedir(), ".codex");
+	const path = join(codexHome, "auth.json");
+	try {
+		if (!existsSync(path)) return null;
+		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+		if (!isAuthEntry(parsed)) return null;
+		const tokens = (parsed as Record<string, unknown>).tokens;
+		if (!isAuthEntry(tokens)) return null;
+		const { access_token: access, account_id: accountId } = tokens as Record<string, unknown>;
+		if (typeof access !== "string" || typeof accountId !== "string") return null;
+		// No refresh token on purpose: refresh tokens rotate, and refreshing here would
+		// invalidate the Codex CLI's stored login. The CLI refreshes its own tokens.
+		return { access, accountId, source: "codex-cli" };
+	} catch {
 		return null;
-	return {
-		access: cred.access,
-		accountId: cred.accountId,
-		refresh: typeof cred.refresh === "string" ? cred.refresh : undefined,
-		expires: typeof cred.expires === "number" ? cred.expires : undefined,
-	};
+	}
 }
 
 export function readAnthropicAuth(): { access: string } | null {

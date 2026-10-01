@@ -260,8 +260,21 @@ export default function piHud(pi: ExtensionAPI) {
 		windows: [{ label: "5h" }, { label: "week" }],
 	});
 
+	const providerIdFor = (ctx: ExtensionContext) => {
+		const model = ctx.model;
+		let subscription = false;
+		if (model) {
+			try {
+				subscription = ctx.modelRegistry.isUsingOAuth(model);
+			} catch {
+				subscription = false;
+			}
+		}
+		return resolveProviderId(model?.provider, { subscription });
+	};
+
 	const getActiveUsage = (ctx: ExtensionContext): ProviderUsage => {
-		switch (resolveProviderId(ctx.model?.provider)) {
+		switch (providerIdFor(ctx)) {
 			case "anthropic":
 				return anthropicUsage;
 			case "minimax":
@@ -420,7 +433,7 @@ export default function piHud(pi: ExtensionAPI) {
 
 
 	const refreshActiveProvider = (ctx: ExtensionContext) => {
-		switch (resolveProviderId(ctx.model?.provider)) {
+		switch (providerIdFor(ctx)) {
 			case "anthropic":
 				return refreshAnthropic();
 			case "minimax":
@@ -501,7 +514,7 @@ export default function piHud(pi: ExtensionAPI) {
 			}
 			wallClockTimer = setInterval(() => {
 				const activeCtx = installedCtx ?? ctx;
-				const activeProviderId = resolveProviderId(activeCtx.model?.provider);
+				const activeProviderId = providerIdFor(activeCtx);
 				const activeUsage = getActiveUsage(activeCtx);
 				const needsQuotaRefresh =
 					activeProviderId !== "openference" &&
@@ -683,7 +696,7 @@ export default function piHud(pi: ExtensionAPI) {
 		const activeCtx = installedCtx;
 		if (
 			activeCtx &&
-			resolveProviderId(activeCtx.model?.provider) === "openference" &&
+			providerIdFor(activeCtx) === "openference" &&
 			Date.now() - lastOpenferenceRefreshAt > OPENFERENCE_REFRESH_MS
 		) {
 			lastOpenferenceRefreshAt = Date.now();

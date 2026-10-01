@@ -1,6 +1,13 @@
 import { readCodexAuth } from "./shared.js";
 import { fetchWithAuth, FetchError } from "./shared.js";
-import type { CodexUsageResponse, CodexFetchResult, ProviderUsage } from "../types.js";
+import type {
+	CodexUsageResponse,
+	CodexUsageWindow,
+	CodexFetchResult,
+	ProviderUsage,
+	UsageWindow,
+	WindowLabel,
+} from "../types.js";
 import { spawn } from "node:child_process";
 
 function isValidCodexResponse(value: unknown): value is CodexUsageResponse {
@@ -182,7 +189,10 @@ export async function fetchCodexUsage(): Promise<CodexFetchResult> {
 				: { usage: null, status: "error", message: "network" };
 		}
 		if (err.kind !== "auth-needed" || !cred.refresh) {
-			if (err.kind === "auth-needed") return { usage: null, status: "auth-needed", message: err.message };
+			if (err.kind === "auth-needed") {
+				const message = cred.source === "codex-cli" ? "codex login" : err.message;
+				return { usage: null, status: "auth-needed", message };
+			}
 			return { usage: null, status: "error", message: err.message };
 		}
 		const refreshed = await refreshCodexAuth(cred.refresh);
@@ -200,6 +210,22 @@ export async function fetchCodexUsage(): Promise<CodexFetchResult> {
 	}
 }
 
+const WINDOW_LABELS: Record<number, WindowLabel> = {
+	18000: "5h",
+	86400: "daily",
+	604800: "week",
+	2592000: "month",
+};
+
+function codexWindow(window: CodexUsageWindow | null | undefined, fallback: WindowLabel): UsageWindow | null {
+	if (!window) return null;
+	return {
+		label: WINDOW_LABELS[window.limit_window_seconds] ?? fallback,
+		usedPercent: window.used_percent,
+		resetAt: window.reset_at ? window.reset_at * 1000 : undefined,
+	};
+}
+
 export function codexToProvider(result: CodexFetchResult, previous?: ProviderUsage): ProviderUsage {
 	const primary = result.usage?.rate_limit?.primary_window;
 	const secondary = result.usage?.rate_limit?.secondary_window;
@@ -214,15 +240,15 @@ export function codexToProvider(result: CodexFetchResult, previous?: ProviderUsa
 			windows: previous?.windows ?? [{ label: "5h" }, { label: "week" }],
 		};
 	}
+	const windows = [codexWindow(primary, "5h"), codexWindow(secondary, "week")].filter(
+		(w): w is UsageWindow => w !== null,
+	);
 	return {
 		id: "codex",
 		name: "Codex",
 		icon: "\udb80\ude29",
 		status: "ok",
 		updatedAt: Date.now(),
-		windows: [
-			{ label: "5h", usedPercent: primary?.used_percent, resetAt: primary?.reset_at ? primary.reset_at * 1000 : undefined },
-			{ label: "week", usedPercent: secondary?.used_percent, resetAt: secondary?.reset_at ? secondary.reset_at * 1000 : undefined },
-		],
+		windows: windows.length > 0 ? windows : [{ label: "5h" }, { label: "week" }],
 	};
 }
